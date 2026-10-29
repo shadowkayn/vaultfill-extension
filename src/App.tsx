@@ -1,4 +1,5 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { CredentialManager } from './credentials/CredentialManager'
 import {
   RESET_VAULT_CONFIRMATION,
   type VaultMessage,
@@ -6,11 +7,13 @@ import {
   type VaultStatus,
 } from './shared/messages'
 import { MINIMUM_MASTER_PASSWORD_LENGTH } from './shared/security'
+import { sendVaultMessage } from './shared/runtime'
 import './App.css'
 
 type CurrentSite = {
   hostname: string
   origin: string
+  supported: boolean
 }
 
 type VaultView = 'default' | 'recover' | 'reset' | 'change-password'
@@ -173,6 +176,15 @@ function App() {
     setView(nextView)
   }
 
+  const handleVaultLocked = useCallback(() => {
+    setVaultStatus({
+      hasVault: true,
+      isUnlocked: false,
+      formatVersion: 2,
+    })
+    setView('default')
+  }, [])
+
   const screen = getVaultScreen(vaultStatus)
   const version = chrome.runtime.getManifest().version
 
@@ -259,11 +271,13 @@ function App() {
             {screen === 'unlocked' && view === 'default' && (
               <UnlockedVaultPanel
                 hostname={currentSite?.hostname || '当前页面'}
+                origin={currentSite?.supported ? currentSite.origin : null}
                 error={formError}
                 submitting={isSubmitting}
                 onChangePassword={() => switchView('change-password')}
                 onRotateRecoveryKey={() => void handleRotateRecoveryKey()}
                 onLock={() => void handleLockVault()}
+                onVaultLocked={handleVaultLocked}
               />
             )}
 
@@ -579,18 +593,22 @@ function RecoveryKeyPanel({
 
 function UnlockedVaultPanel({
   hostname,
+  origin,
   error,
   submitting,
   onChangePassword,
   onRotateRecoveryKey,
   onLock,
+  onVaultLocked,
 }: {
   hostname: string
+  origin: string | null
   error: string
   submitting: boolean
   onChangePassword: () => void
   onRotateRecoveryKey: () => void
   onLock: () => void
+  onVaultLocked: () => void
 }) {
   return (
     <div className="unlocked-state">
@@ -601,15 +619,8 @@ function UnlockedVaultPanel({
         </div>
         <span className="unlocked-badge">安全会话</span>
       </div>
-      <div className="empty-credentials">
-        <div className="state-icon" aria-hidden="true">🗝️</div>
-        <strong>还没有保存的账号</strong>
-        <p>下一阶段将加入账号的新增、编辑和删除功能。</p>
-      </div>
+      <CredentialManager origin={origin} onVaultLocked={onVaultLocked} />
       <FormError message={error} />
-      <button className="primary-button" type="button" disabled>
-        添加账号即将接入
-      </button>
       <div className="management-actions">
         <button type="button" onClick={onChangePassword} disabled={submitting}>修改主密码</button>
         <button type="button" onClick={onRotateRecoveryKey} disabled={submitting}>更新恢复密钥</button>
@@ -676,10 +687,6 @@ function getVaultScreen(
   return vaultStatus.isUnlocked ? 'unlocked' : 'locked'
 }
 
-function sendVaultMessage(message: VaultMessage): Promise<VaultResponse> {
-  return chrome.runtime.sendMessage(message) as Promise<VaultResponse>
-}
-
 function loadVaultStatus(
   setVaultStatus: (status: VaultStatus) => void,
   setFormError: (message: string) => void,
@@ -712,7 +719,11 @@ function loadCurrentSite(
       const url = new URL(tab.url)
       const supported = url.protocol === 'https:' || url.protocol === 'http:'
 
-      setCurrentSite({ hostname: url.hostname, origin: url.origin })
+      setCurrentSite({
+        hostname: url.hostname,
+        origin: url.origin,
+        supported,
+      })
       setSiteMessage(supported ? '当前页面可以使用 VaultFill' : '此类浏览器页面不支持填充')
     } catch {
       setSiteMessage('当前页面地址无法识别')

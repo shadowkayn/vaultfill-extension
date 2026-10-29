@@ -2,6 +2,7 @@ import { unlockLegacyVault } from '../crypto/legacy-vault-crypto'
 import {
   createEncryptedVault,
   decryptVaultWithSessionDataKey,
+  encryptVaultWithSessionDataKey,
   replaceMasterPasswordSlot,
   rotateRecoveryKeySlot,
   unlockWithMasterPassword,
@@ -10,6 +11,7 @@ import {
 import {
   createEmptyVaultPayload,
   isLegacyEncryptedVault,
+  type EncryptedVault,
 } from '../crypto/types'
 import {
   RESET_VAULT_CONFIRMATION,
@@ -30,6 +32,12 @@ import {
   getStoredVault,
   saveStoredVault,
 } from '../storage/vault-repository'
+import {
+  deleteCredential,
+  getCredentialById,
+  listCredentialsForOrigin,
+  saveCredential,
+} from '../vault/credential-service'
 
 const storageAccessReady = restrictStorageAccess()
 
@@ -74,6 +82,18 @@ async function handleMessage(message: VaultMessage): Promise<VaultResponse> {
 
     case 'ROTATE_RECOVERY_KEY':
       return rotateRecoveryKey()
+
+    case 'LIST_CREDENTIALS':
+      return listCredentials(message.origin)
+
+    case 'GET_CREDENTIAL':
+      return getCredential(message.credentialId)
+
+    case 'SAVE_CREDENTIAL':
+      return persistCredential(message.credential)
+
+    case 'DELETE_CREDENTIAL':
+      return removeCredential(message.credentialId)
 
     case 'LOCK_VAULT':
       await clearSessionDataKey()
@@ -297,6 +317,144 @@ async function rotateRecoveryKey(): Promise<VaultResponse> {
     await clearSessionDataKey()
     return errorResponse('VAULT_LOCKED', '当前解锁会话已经失效。')
   }
+}
+
+async function listCredentials(origin: string): Promise<VaultResponse> {
+  const context = await getUnlockedVaultContext()
+
+  if (!context) {
+    return errorResponse('VAULT_LOCKED', '密码库已锁定，请重新解锁。')
+  }
+
+  try {
+    return {
+      ok: true,
+      status: unlockedStatus(),
+      credentials: listCredentialsForOrigin(context.payload, origin),
+    }
+  } catch {
+    return errorResponse('INVALID_REQUEST', '当前页面地址不支持保存账号。')
+  }
+}
+
+async function getCredential(credentialId: string): Promise<VaultResponse> {
+  const context = await getUnlockedVaultContext()
+
+  if (!context) {
+    return errorResponse('VAULT_LOCKED', '密码库已锁定，请重新解锁。')
+  }
+
+  const credential = getCredentialById(context.payload, credentialId)
+
+  if (!credential) {
+    return errorResponse('INVALID_REQUEST', '找不到要编辑的账号。')
+  }
+
+  return {
+    ok: true,
+    status: unlockedStatus(),
+    credential,
+  }
+}
+
+async function persistCredential(
+  input: Extract<VaultMessage, { type: 'SAVE_CREDENTIAL' }>['credential'],
+): Promise<VaultResponse> {
+  const context = await getUnlockedVaultContext()
+
+  if (!context) {
+    return errorResponse('VAULT_LOCKED', '密码库已锁定，请重新解锁。')
+  }
+
+  try {
+    const saved = saveCredential(context.payload, input, {
+      now: new Date().toISOString(),
+      createId: () => crypto.randomUUID(),
+    })
+    const encryptedVault = await encryptVaultWithSessionDataKey(
+      saved.payload,
+      context.encryptedVault,
+      context.sessionDataKey,
+    )
+    await saveStoredVault(encryptedVault)
+
+    return {
+      ok: true,
+      status: unlockedStatus(),
+      credential: saved.credential,
+      credentials: listCredentialsForOrigin(saved.payload, saved.credential.origin),
+    }
+  } catch {
+    return errorResponse('INVALID_REQUEST', '账号信息不完整或格式不正确。')
+  }
+}
+
+async function removeCredential(credentialId: string): Promise<VaultResponse> {
+  const context = await getUnlockedVaultContext()
+
+  if (!context) {
+    return errorResponse('VAULT_LOCKED', '密码库已锁定，请重新解锁。')
+  }
+
+  const credential = getCredentialById(context.payload, credentialId)
+
+  if (!credential) {
+    return errorResponse('INVALID_REQUEST', '找不到要删除的账号。')
+  }
+
+  try {
+    const payload = deleteCredential(context.payload, credentialId)
+    const encryptedVault = await encryptVaultWithSessionDataKey(
+      payload,
+      context.encryptedVault,
+      context.sessionDataKey,
+    )
+    await saveStoredVault(encryptedVault)
+
+    return {
+      ok: true,
+      status: unlockedStatus(),
+      credentials: listCredentialsForOrigin(payload, credential.origin),
+    }
+  } catch {
+    return errorResponse('INVALID_REQUEST', '删除账号失败。')
+  }
+}
+
+async function getUnlockedVaultContext(): Promise<{
+  encryptedVault: EncryptedVault
+  payload: Awaited<ReturnType<typeof decryptVaultWithSessionDataKey>>
+  sessionDataKey: string
+} | null> {
+  const storedVault = await getStoredVault()
+
+  if (!storedVault || isLegacyEncryptedVault(storedVault)) {
+    return null
+  }
+
+  const sessionDataKey = await getSessionDataKey()
+
+  if (!sessionDataKey) {
+    return null
+  }
+
+  try {
+    return {
+      encryptedVault: storedVault,
+      payload: await decryptVaultWithSessionDataKey(
+        storedVault,
+        sessionDataKey,
+      ),
+      sessionDataKey,
+    }
+  } catch {
+    await clearSessionDataKey()
+    return null
+  }
+}
+
+function unlockedStatus(): VaultStatus {
+  return { hasVault: true, isUnlocked: true, formatVersion: 2 }
 }
 
 async function resetVault(confirmation: string): Promise<VaultResponse> {

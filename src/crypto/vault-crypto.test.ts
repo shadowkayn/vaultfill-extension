@@ -57,6 +57,32 @@ describe('vault envelope encryption', () => {
     expect(serializedVault).not.toContain('credentials')
   })
 
+  it('keeps saved website credentials out of the serialized vault', async () => {
+    const payload = {
+      version: 1 as const,
+      credentials: [
+        {
+          id: 'credential-1',
+          label: '公司管理员',
+          origin: 'https://admin.example.com',
+          username: 'admin@example.com',
+          password: 'a-real-site-password',
+          createdAt: '2026-10-29T00:00:00.000Z',
+          updatedAt: '2026-10-29T00:00:00.000Z',
+        },
+      ],
+    }
+    const result = await createEncryptedVault(payload, masterPassword)
+    const serializedVault = JSON.stringify(result.encryptedVault)
+
+    expect(serializedVault).not.toContain('admin.example.com')
+    expect(serializedVault).not.toContain('admin@example.com')
+    expect(serializedVault).not.toContain('a-real-site-password')
+    await expect(
+      unlockWithMasterPassword(result.encryptedVault, masterPassword),
+    ).resolves.toMatchObject({ payload })
+  })
+
   it('rejects incorrect unlock secrets', async () => {
     await expect(
       unlockWithMasterPassword(

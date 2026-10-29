@@ -1,4 +1,19 @@
+import type { Credential } from '../crypto/types'
+
 export const RESET_VAULT_CONFIRMATION = '删除我的密码库'
+
+export type CredentialSummary = Pick<
+  Credential,
+  'id' | 'label' | 'username' | 'updatedAt'
+>
+
+export type CredentialInput = Pick<
+  Credential,
+  'label' | 'origin' | 'username' | 'password'
+> & {
+  id?: string
+  notes?: string
+}
 
 export type VaultStatus = {
   hasVault: boolean
@@ -21,6 +36,10 @@ export type VaultMessage =
       newMasterPassword: string
     }
   | { type: 'ROTATE_RECOVERY_KEY' }
+  | { type: 'LIST_CREDENTIALS'; origin: string }
+  | { type: 'GET_CREDENTIAL'; credentialId: string }
+  | { type: 'SAVE_CREDENTIAL'; credential: CredentialInput }
+  | { type: 'DELETE_CREDENTIAL'; credentialId: string }
   | { type: 'LOCK_VAULT' }
   | {
       type: 'RESET_VAULT'
@@ -41,6 +60,8 @@ export type VaultResponse =
       ok: true
       status: VaultStatus
       recoveryKey?: string
+      credentials?: CredentialSummary[]
+      credential?: Credential
     }
   | {
       ok: false
