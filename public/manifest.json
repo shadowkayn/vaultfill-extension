@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VaultFill",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "在本地加密保存，并由用户主动填入网站登录凭据。",
   "action": {
     "default_title": "VaultFill",

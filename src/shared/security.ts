@@ -1,0 +1,1 @@
+export const MINIMUM_MASTER_PASSWORD_LENGTH = 8
