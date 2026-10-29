@@ -16,7 +16,7 @@
 html,
 body,
 #root {
-  min-width: 380px;
-  min-height: 500px;
+  min-width: 420px;
+  min-height: 560px;
   margin: 0;
 }

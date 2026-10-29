@@ -36,6 +36,7 @@ import {
   deleteCredential,
   getCredentialById,
   listCredentialsForOrigin,
+  normalizeHttpOrigin,
   saveCredential,
 } from '../vault/credential-service'
 
@@ -94,6 +95,9 @@ async function handleMessage(message: VaultMessage): Promise<VaultResponse> {
 
     case 'DELETE_CREDENTIAL':
       return removeCredential(message.credentialId)
+
+    case 'FILL_CREDENTIAL':
+      return fillCredential(message.credentialId, message.expectedOrigin)
 
     case 'LOCK_VAULT':
       await clearSessionDataKey()
@@ -418,6 +422,91 @@ async function removeCredential(credentialId: string): Promise<VaultResponse> {
     }
   } catch {
     return errorResponse('INVALID_REQUEST', '删除账号失败。')
+  }
+}
+
+async function fillCredential(
+  credentialId: string,
+  expectedOrigin: string,
+): Promise<VaultResponse> {
+  const context = await getUnlockedVaultContext()
+
+  if (!context) {
+    return errorResponse('VAULT_LOCKED', '密码库已锁定，请重新解锁。')
+  }
+
+  const credential = getCredentialById(context.payload, credentialId)
+
+  if (!credential) {
+    return errorResponse('INVALID_REQUEST', '找不到要填入的账号。')
+  }
+
+  try {
+    const normalizedExpectedOrigin = normalizeHttpOrigin(expectedOrigin)
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+
+    if (!tab?.id || !tab.url) {
+      return errorResponse('FILL_FAILED', '无法访问当前标签页。')
+    }
+
+    const currentOrigin = normalizeHttpOrigin(tab.url)
+
+    if (
+      currentOrigin !== credential.origin ||
+      currentOrigin !== normalizedExpectedOrigin
+    ) {
+      return errorResponse(
+        'ORIGIN_MISMATCH',
+        '当前网站与账号保存的网站不一致，已阻止填入。',
+      )
+    }
+
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['fill-form.js'],
+    })
+
+    const result = (await chrome.tabs.sendMessage(tab.id, {
+      type: 'FILL_LOGIN_FIELDS',
+      expectedOrigin: normalizedExpectedOrigin,
+      username: credential.username,
+      password: credential.password,
+    })) as
+      | {
+          ok: true
+          status: 'filled'
+          usernameFieldFound: boolean
+          passwordFieldFound: boolean
+        }
+      | { ok: false; code: 'NO_LOGIN_FIELDS' | 'ORIGIN_MISMATCH' }
+
+    if (!result?.ok) {
+      const message =
+        result?.code === 'ORIGIN_MISMATCH'
+          ? '页面地址在填入前发生变化，已阻止操作。'
+          : '当前页面没有找到可填写的登录输入框。'
+      return errorResponse(
+        result?.code === 'ORIGIN_MISMATCH'
+          ? 'ORIGIN_MISMATCH'
+          : 'FILL_FAILED',
+        message,
+      )
+    }
+
+    return {
+      ok: true,
+      status: unlockedStatus(),
+      fillResult: {
+        status: 'filled',
+        usernameFieldFound: result.usernameFieldFound,
+        passwordFieldFound: result.passwordFieldFound,
+      },
+    }
+  } catch {
+    return errorResponse(
+      'FILL_FAILED',
+      '当前页面不允许填入，或登录表单暂时无法识别。',
+    )
   }
 }
 

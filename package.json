@@ -1,7 +1,7 @@
 {
   "name": "vaultfill-extension",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "packageManager": "pnpm@10.15.0",
   "scripts": {
@@ -21,6 +21,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "happy-dom": "^21.0.4",
     "oxlint": "^1.89.0",
     "typescript": "~7.0.2",
     "vite": "^8.3.5",

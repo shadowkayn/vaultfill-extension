@@ -1,10 +1,11 @@
 .popup {
   box-sizing: border-box;
-  width: 380px;
-  min-height: 500px;
+  width: 420px;
+  min-height: 560px;
   padding: 20px;
   background: #f7f8fb;
   color: #182033;
+  font-size: 16px;
 }
 
 .header {
@@ -22,27 +23,29 @@
   background: linear-gradient(145deg, #3267e8, #173b9c);
   box-shadow: 0 8px 22px rgb(50 103 232 / 24%);
   color: #fff;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 800;
 }
 
 .header h1 {
   margin: 0;
   color: #11182a;
-  font-size: 18px;
+  font-size: 22px;
   line-height: 1.2;
 }
 
 .header p {
   margin: 3px 0 0;
-  color: #70788c;
-  font-size: 12px;
+  color: #59647b;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .version {
   margin-left: auto;
-  color: #8b93a7;
-  font-size: 11px;
+  color: #69738a;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .site-card {
@@ -58,8 +61,15 @@
 
 .label,
 .eyebrow {
-  color: #7c8496;
-  font-size: 11px;
+  color: #606b82;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.eyebrow {
+  color: #4f5d77;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .site-card strong,
@@ -71,12 +81,13 @@
 
 .site-card strong {
   color: #182033;
-  font-size: 15px;
+  font-size: 18px;
 }
 
 .origin {
-  color: #8b93a7;
-  font-size: 11px;
+  color: #69748a;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .vault-panel {
@@ -94,7 +105,7 @@
 }
 
 .state-icon {
-  font-size: 28px;
+  font-size: 30px;
   text-align: center;
 }
 
@@ -103,22 +114,22 @@
 .recovery-key-panel h2 {
   margin: 0;
   color: #182033;
-  font-size: 17px;
+  font-size: 21px;
   text-align: center;
 }
 
 .description {
   margin: 0 0 6px;
-  color: #697287;
-  font-size: 12px;
+  color: #566179;
+  font-size: 14px;
   line-height: 1.55;
   text-align: center;
 }
 
 .vault-form label {
-  color: #4f586d;
-  font-size: 12px;
-  font-weight: 650;
+  color: #3f4a62;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .vault-form input {
@@ -130,7 +141,7 @@
   background: #fbfcfe;
   color: #182033;
   font: inherit;
-  font-size: 13px;
+  font-size: 15px;
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
@@ -140,7 +151,7 @@
 }
 
 .vault-form input::placeholder {
-  color: #a2a9b8;
+  color: #7f899e;
 }
 
 .vault-form .monospace-input {
@@ -155,7 +166,7 @@
   border-radius: 8px;
   background: #fff0f0;
   color: #bd2d2d;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.45;
 }
 
@@ -165,7 +176,7 @@
   padding: 11px 14px;
   border-radius: 10px;
   font: inherit;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -182,7 +193,7 @@
   margin-top: 9px;
   border: 1px solid #d8ddea;
   background: #fff;
-  color: #566078;
+  color: #3f4b64;
 }
 
 .primary-button:disabled,
@@ -200,7 +211,7 @@
   background: #c83c3c;
   color: #fff;
   font: inherit;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -212,8 +223,9 @@
 
 .warning {
   margin: 0;
-  color: #8a6570;
-  font-size: 10px;
+  color: #80545f;
+  font-size: 13px;
+  line-height: 1.5;
   text-align: center;
 }
 
@@ -223,8 +235,8 @@
   place-items: center;
   align-content: center;
   gap: 12px;
-  color: #737b8e;
-  font-size: 12px;
+  color: #59647b;
+  font-size: 14px;
 }
 
 .loading-state p {
@@ -241,23 +253,24 @@
 .text-actions button,
 .back-button,
 .management-actions button {
-  padding: 2px 0;
+  padding: 5px 2px;
   border: 0;
   background: transparent;
-  color: #3267e8;
+  color: #2859cc;
   font: inherit;
-  font-size: 11px;
+  font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
 }
 
 .text-actions .danger-link {
-  color: #b44343;
+  color: #a93636;
 }
 
 .back-button {
   justify-self: start;
-  margin-bottom: -2px;
-  color: #687188;
+  margin: -3px 0 -2px -2px;
+  color: #2859cc;
 }
 
 .danger-panel {
@@ -266,7 +279,7 @@
   border-radius: 9px;
   background: #fff4f4;
   color: #a73535;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -288,7 +301,7 @@
 
 .unlocked-state h2 {
   margin-top: 3px;
-  max-width: 190px;
+  max-width: 220px;
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
@@ -296,12 +309,12 @@
 }
 
 .unlocked-badge {
-  padding: 5px 8px;
+  padding: 6px 9px;
   border-radius: 999px;
   background: #eaf8f1;
-  color: #278156;
-  font-size: 10px;
-  font-weight: 700;
+  color: #176d45;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .empty-credentials {
@@ -313,13 +326,13 @@
 
 .empty-credentials strong {
   color: #30384b;
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .empty-credentials p {
   margin: 0;
-  color: #858d9e;
-  font-size: 11px;
+  color: #68738a;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -335,14 +348,18 @@
   opacity: 0.55;
 }
 
+.management-actions button {
+  font-size: 13px;
+}
+
 .credential-loading {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   min-height: 150px;
-  color: #737b8e;
-  font-size: 11px;
+  color: #59647b;
+  font-size: 14px;
 }
 
 .credential-loading .spinner {
@@ -361,7 +378,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 11px 12px;
+  padding: 13px 14px;
   border: 1px solid #e4e7ef;
   border-radius: 10px;
   background: #fafbfe;
@@ -380,35 +397,59 @@
 }
 
 .credential-card strong {
-  color: #30384b;
-  font-size: 12px;
+  color: #202a40;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .credential-card span {
-  margin-top: 3px;
-  color: #858d9e;
-  font-size: 10px;
+  margin-top: 4px;
+  color: #69748a;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .credential-actions {
   display: flex;
   flex: 0 0 auto;
-  gap: 9px;
+  gap: 10px;
 }
 
 .credential-actions button,
 .credential-form-heading button {
-  padding: 2px 0;
+  padding: 4px 0;
   border: 0;
   background: transparent;
-  color: #3267e8;
+  color: #2859cc;
   font: inherit;
-  font-size: 10px;
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
 }
 
 .credential-actions .delete {
-  color: #b44343;
+  color: #a93636;
+}
+
+.credential-actions .fill {
+  color: #176d45;
+  font-weight: 800;
+}
+
+.credential-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.fill-success {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #eaf8f1;
+  color: #176d45;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .credential-form {
@@ -425,18 +466,18 @@
 
 .credential-form-heading button {
   justify-self: start;
-  color: #687188;
+  color: #2859cc;
 }
 
 .credential-form-heading strong {
-  color: #30384b;
-  font-size: 13px;
+  color: #202a40;
+  font-size: 16px;
 }
 
 .credential-form label {
-  color: #4f586d;
-  font-size: 11px;
-  font-weight: 650;
+  color: #3f4a62;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .credential-form input,
@@ -449,7 +490,7 @@
   background: #fbfcfe;
   color: #182033;
   font: inherit;
-  font-size: 12px;
+  font-size: 15px;
   resize: vertical;
 }
 
@@ -474,9 +515,10 @@
   padding: 8px 4px;
   border: 0;
   background: transparent;
-  color: #3267e8;
+  color: #2859cc;
   font: inherit;
-  font-size: 10px;
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -488,14 +530,14 @@
 }
 
 .credential-delete > strong {
-  color: #30384b;
-  font-size: 14px;
+  color: #202a40;
+  font-size: 16px;
 }
 
 .credential-delete > p {
   margin: 0;
-  color: #727b8e;
-  font-size: 11px;
+  color: #59647b;
+  font-size: 14px;
 }
 
 .credential-delete .danger-copy {
@@ -508,6 +550,28 @@
   text-align: center;
 }
 
+.recovery-key-help {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #dbe3f8;
+  border-radius: 10px;
+  background: #f5f7ff;
+  color: #46536d;
+  font-size: 14px;
+  line-height: 1.55;
+  text-align: left;
+}
+
+.recovery-key-help strong {
+  color: #244aab;
+  font-size: 14px;
+}
+
+.recovery-key-help span + strong {
+  margin-top: 6px;
+}
+
 .recovery-key-value {
   display: block;
   padding: 12px 10px;
@@ -516,7 +580,7 @@
   background: #f3f6ff;
   color: #1d3f95;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1.65;
   overflow-wrap: anywhere;
@@ -528,8 +592,9 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: #566078;
-  font-size: 11px;
+  color: #3f4b64;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -539,14 +604,20 @@
   accent-color: #3267e8;
 }
 
+.recovery-key-warning {
+  color: #8f4444;
+  font-size: 13px;
+}
+
 footer {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
   margin-top: 16px;
-  color: #8a92a5;
-  font-size: 11px;
+  color: #657087;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .status-dot {

@@ -37,6 +37,8 @@ export function CredentialManager({
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [fillingCredentialId, setFillingCredentialId] = useState<string | null>(null)
+  const [fillStatus, setFillStatus] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -87,6 +89,7 @@ export function CredentialManager({
     }
 
     setError(response.error.message)
+    setFillStatus('')
 
     if (response.error.code === 'VAULT_LOCKED') {
       onVaultLocked()
@@ -99,12 +102,14 @@ export function CredentialManager({
     setForm(emptyCredentialForm)
     setShowPassword(false)
     setError('')
+    setFillStatus('')
     setView('form')
   }
 
   async function startEditingCredential(credentialId: string): Promise<void> {
     setIsLoading(true)
     setError('')
+    setFillStatus('')
 
     try {
       const response = await sendVaultMessage({
@@ -184,6 +189,7 @@ export function CredentialManager({
   function startDeletingCredential(credential: CredentialSummary) {
     setDeleteTarget(credential)
     setError('')
+    setFillStatus('')
     setView('delete')
   }
 
@@ -219,7 +225,50 @@ export function CredentialManager({
     setDeleteTarget(null)
     setShowPassword(false)
     setError('')
+    setFillStatus('')
     setView('list')
+  }
+
+  async function fillCredential(credentialId: string): Promise<void> {
+    if (!origin) {
+      setError('当前页面不支持填入账号。')
+      return
+    }
+
+    setFillingCredentialId(credentialId)
+    setError('')
+    setFillStatus('')
+
+    try {
+      const response = await sendVaultMessage({
+        type: 'FILL_CREDENTIAL',
+        credentialId,
+        expectedOrigin: origin,
+      })
+
+      if (handleResponseError(response)) {
+        return
+      }
+
+      const result = response.fillResult
+
+      if (!result) {
+        setError('网页没有返回填入结果。')
+        return
+      }
+
+      if (result.usernameFieldFound && result.passwordFieldFound) {
+        setFillStatus('用户名和密码已填入，请检查后手动登录。')
+      } else if (result.usernameFieldFound) {
+        setFillStatus('已填入用户名，当前页面没有找到密码框。')
+      } else {
+        setFillStatus('已填入密码，当前页面没有找到用户名框。')
+      }
+    } catch {
+      setError('填入账号失败，请稍后重试。')
+    } finally {
+      setFillingCredentialId(null)
+    }
   }
 
   if (!origin) {
@@ -337,6 +386,14 @@ export function CredentialManager({
               <span>{credential.username}</span>
             </div>
             <div className="credential-actions">
+              <button
+                type="button"
+                className="fill"
+                onClick={() => void fillCredential(credential.id)}
+                disabled={fillingCredentialId !== null}
+              >
+                {fillingCredentialId === credential.id ? '填入中…' : '填入'}
+              </button>
               <button type="button" onClick={() => void startEditingCredential(credential.id)}>编辑</button>
               <button type="button" className="delete" onClick={() => startDeletingCredential(credential)}>删除</button>
             </div>
@@ -344,6 +401,7 @@ export function CredentialManager({
         ))
       )}
       <CredentialError message={error} />
+      {fillStatus && <p className="fill-success">{fillStatus}</p>}
       <button className="primary-button" type="button" onClick={startCreatingCredential}>
         添加账号
       </button>

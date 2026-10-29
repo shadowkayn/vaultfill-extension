@@ -21,6 +21,12 @@ export type VaultStatus = {
   formatVersion: number | null
 }
 
+export type FillResult = {
+  status: 'filled'
+  usernameFieldFound: boolean
+  passwordFieldFound: boolean
+}
+
 export type VaultMessage =
   | { type: 'GET_VAULT_STATUS' }
   | { type: 'CREATE_VAULT'; masterPassword: string }
@@ -40,6 +46,11 @@ export type VaultMessage =
   | { type: 'GET_CREDENTIAL'; credentialId: string }
   | { type: 'SAVE_CREDENTIAL'; credential: CredentialInput }
   | { type: 'DELETE_CREDENTIAL'; credentialId: string }
+  | {
+      type: 'FILL_CREDENTIAL'
+      credentialId: string
+      expectedOrigin: string
+    }
   | { type: 'LOCK_VAULT' }
   | {
       type: 'RESET_VAULT'
@@ -53,6 +64,8 @@ export type VaultErrorCode =
   | 'VAULT_LOCKED'
   | 'UNLOCK_FAILED'
   | 'RECOVERY_FAILED'
+  | 'ORIGIN_MISMATCH'
+  | 'FILL_FAILED'
   | 'STORAGE_ERROR'
 
 export type VaultResponse =
@@ -62,6 +75,7 @@ export type VaultResponse =
       recoveryKey?: string
       credentials?: CredentialSummary[]
       credential?: Credential
+      fillResult?: FillResult
     }
   | {
       ok: false

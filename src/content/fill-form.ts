@@ -1,24 +1,22 @@
-type LoginFieldDetection = {
-  usernameFieldFound: boolean
-  passwordFieldFound: boolean
+import { fillLoginFields } from './form-filler'
+
+type VaultFillContentScriptGlobal = typeof globalThis & {
+  __vaultFillContentScriptInstalled?: boolean
 }
 
-function detectLoginFields(): LoginFieldDetection {
-  const passwordField = document.querySelector<HTMLInputElement>(
-    'input[type="password"]',
-  )
-  const usernameField = document.querySelector<HTMLInputElement>(
-    'input[autocomplete="username"], input[type="email"], input[type="text"]',
-  )
+var vaultFillGlobal = globalThis as VaultFillContentScriptGlobal
 
-  return {
-    usernameFieldFound: usernameField !== null,
-    passwordFieldFound: passwordField !== null,
-  }
+if (!vaultFillGlobal.__vaultFillContentScriptInstalled) {
+  vaultFillGlobal.__vaultFillContentScriptInstalled = true
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === 'FILL_LOGIN_FIELDS') {
+      if (location.origin !== message.expectedOrigin) {
+        sendResponse({ ok: false, code: 'ORIGIN_MISMATCH' })
+        return
+      }
+
+      sendResponse(fillLoginFields(message.username, message.password))
+    }
+  })
 }
-
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === 'DETECT_LOGIN_FIELDS') {
-    sendResponse(detectLoginFields())
-  }
-})

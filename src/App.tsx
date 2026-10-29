@@ -322,7 +322,9 @@ function CreateVaultForm(props: PasswordFormProps) {
     <form className="vault-form" onSubmit={props.onSubmit}>
       <div className="state-icon" aria-hidden="true">🔐</div>
       <h2>创建本地密码库</h2>
-      <p className="description">主密码不会保存；创建后请抄下恢复密钥。</p>
+      <p className="description">
+        主密码不会保存。创建后会生成恢复密钥，忘记主密码时可用它恢复密码库。
+      </p>
       <NewPasswordFields {...props} />
       <FormError message={props.error} />
       <button className="primary-button" type="submit" disabled={props.submitting}>
@@ -572,17 +574,27 @@ function RecoveryKeyPanel({
   return (
     <div className="recovery-key-panel">
       <div className="state-icon" aria-hidden="true">🧾</div>
-      <h2>保存恢复密钥</h2>
-      <p className="description">它只显示这一次。请写在纸上或保存到安全的离线位置。</p>
+      <h2>请保存密码库恢复密钥</h2>
+      <p className="description">
+        如果以后忘记主密码，可以使用这串恢复密钥重新解锁密码库，并设置新的主密码。
+      </p>
+      <div className="recovery-key-help">
+        <strong>在哪里使用？</strong>
+        <span>打开插件，在密码库锁定页面点击「忘记主密码」，然后输入恢复密钥。</span>
+        <strong>它有什么作用？</strong>
+        <span>验证你拥有这个密码库，让你在忘记主密码后恢复访问并设置新密码。</span>
+      </div>
       <code className="recovery-key-value">{recoveryKey}</code>
-      <p className="warning">任何获得此密钥的人都可能解锁你的密码库。</p>
+      <p className="warning recovery-key-warning">
+        恢复密钥相当于密码库的备用钥匙，只显示这一次。请抄写到纸上或保存到安全的离线位置，不要发送给他人或上传到网络。
+      </p>
       <label className="confirmation-row">
         <input
           type="checkbox"
           checked={confirmed}
           onChange={(event) => onConfirmedChange(event.target.checked)}
         />
-        我已经安全保存恢复密钥
+        我已将恢复密钥保存在安全的位置
       </label>
       <button className="primary-button" type="button" disabled={!confirmed} onClick={onContinue}>
         继续使用 VaultFill
