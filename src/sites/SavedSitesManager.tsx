@@ -80,7 +80,7 @@ export function SavedSitesManager({
     try {
       const response = await sendVaultMessage({
         type: 'DELETE_SITE_CREDENTIALS',
-        origin: deleteTarget.origin,
+        siteId: deleteTarget.id,
       })
 
       if (handleResponseError(response)) {
@@ -137,6 +137,7 @@ export function SavedSitesManager({
           <strong> {deleteTarget.credentialCount} 个账号和密码</strong>。
         </p>
         <code>{deleteTarget.origin}</code>
+        <code>{deleteTarget.loginUrl}</code>
         <p className="danger-copy">此操作无法撤销，但不会影响其他网站。</p>
         {error && <p className="form-error">{error}</p>}
         <FishButton
@@ -183,7 +184,7 @@ export function SavedSitesManager({
       ) : (
         <div className="saved-sites-list">
           {sites.map((site) => (
-            <article className="saved-site-card" key={site.origin}>
+            <article className="saved-site-card" key={site.id}>
               <div className="saved-site-summary">
                 <span className="saved-site-title-row">
                   <strong>{site.alias || site.hostname}</strong>

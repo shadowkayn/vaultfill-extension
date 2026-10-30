@@ -1,3 +1,8 @@
+import {
+  createVaultBackup,
+  parseVaultBackupText,
+} from '../backup/backup-service'
+import type { BackupImportAuthentication } from '../backup/types'
 import { unlockLegacyVault } from '../crypto/legacy-vault-crypto'
 import {
   createEncryptedVault,
@@ -15,6 +20,7 @@ import {
 } from '../crypto/types'
 import {
   RESET_VAULT_CONFIRMATION,
+  IMPORT_VAULT_CONFIRMATION,
   type VaultErrorCode,
   type VaultMessage,
   type VaultResponse,
@@ -33,13 +39,15 @@ import {
   saveStoredVault,
 } from '../storage/vault-repository'
 import {
-  deleteCredentialsForOrigin,
+  deleteCredentialsForSite,
   deleteCredential,
-  getCredentialById,
-  getSiteAlias,
-  listCredentialsForOrigin,
+  getCredentialDetails,
+  getSiteProfileById,
+  listCredentialsForSite,
   listSavedSites,
+  listSiteProfilesForPage,
   normalizeHttpOrigin,
+  resolveSiteProfileForPage,
   saveCredential,
   setSiteAlias,
 } from '../vault/credential-service'
@@ -88,17 +96,27 @@ async function handleMessage(message: VaultMessage): Promise<VaultResponse> {
     case 'ROTATE_RECOVERY_KEY':
       return rotateRecoveryKey()
 
+    case 'EXPORT_VAULT_BACKUP':
+      return exportVaultBackup()
+
+    case 'IMPORT_VAULT_BACKUP':
+      return importVaultBackup(
+        message.backupText,
+        message.authentication,
+        message.confirmation,
+      )
+
     case 'LIST_CREDENTIALS':
-      return listCredentials(message.origin)
+      return listCredentials(message.pageUrl, message.siteId)
 
     case 'LIST_SITES':
       return listSites()
 
     case 'SET_SITE_ALIAS':
-      return updateSiteAlias(message.origin, message.alias)
+      return updateSiteAlias(message.pageUrl, message.siteId, message.alias)
 
     case 'DELETE_SITE_CREDENTIALS':
-      return removeSiteCredentials(message.origin)
+      return removeSiteCredentials(message.siteId)
 
     case 'GET_CREDENTIAL':
       return getCredential(message.credentialId)
@@ -336,7 +354,172 @@ async function rotateRecoveryKey(): Promise<VaultResponse> {
   }
 }
 
-async function listCredentials(origin: string): Promise<VaultResponse> {
+async function exportVaultBackup(): Promise<VaultResponse> {
+  const storedVault = await getStoredVault()
+
+  if (!storedVault) {
+    return errorResponse('VAULT_NOT_FOUND', '本地密码库尚未创建。')
+  }
+
+  const context = await getUnlockedVaultContext()
+
+  if (!context) {
+    return errorResponse('VAULT_LOCKED', '请先解锁密码库，再下载备份。')
+  }
+
+  if (context.payload.credentials.length === 0) {
+    return errorResponse(
+      'BACKUP_EXPORT_FAILED',
+      '密码库中还没有保存任何账号，暂时无需下载备份。',
+    )
+  }
+
+  return {
+    ok: true,
+    status: unlockedStatus(),
+    backup: createVaultBackup(context.encryptedVault, {
+      exportedAt: new Date().toISOString(),
+      appVersion: chrome.runtime.getManifest().version,
+    }),
+  }
+}
+
+async function importVaultBackup(
+  backupText: string,
+  authentication: BackupImportAuthentication,
+  confirmation: string,
+): Promise<VaultResponse> {
+  const existingVault = await getStoredVault()
+
+  if (existingVault && confirmation !== IMPORT_VAULT_CONFIRMATION) {
+    return errorResponse(
+      'INVALID_REQUEST',
+      '请确认恢复操作会替换当前密码库。',
+    )
+  }
+
+  try {
+    const backup = parseVaultBackupText(backupText)
+
+    if (authentication.type === 'master-password') {
+      if (!isValidUnlockPassword(authentication.masterPassword)) {
+        return errorResponse('INVALID_REQUEST', '请输入备份文件的主密码。')
+      }
+
+      if (isLegacyEncryptedVault(backup.encryptedVault)) {
+        const payload = await unlockLegacyVault(
+          backup.encryptedVault,
+          authentication.masterPassword,
+        )
+        const migrated = await createEncryptedVault(
+          payload,
+          authentication.masterPassword,
+        )
+
+        await replaceVaultAfterVerifiedImport(
+          migrated.encryptedVault,
+          migrated.sessionDataKey,
+        )
+
+        return successResponse(unlockedStatus(), migrated.recoveryKey)
+      }
+
+      const unlocked = await unlockWithMasterPassword(
+        backup.encryptedVault,
+        authentication.masterPassword,
+      )
+      const importedVault = await encryptVaultWithSessionDataKey(
+        unlocked.payload,
+        backup.encryptedVault,
+        unlocked.sessionDataKey,
+      )
+
+      await replaceVaultAfterVerifiedImport(
+        importedVault,
+        unlocked.sessionDataKey,
+      )
+
+      return successResponse(unlockedStatus())
+    }
+
+    if (!isValidRecoveryKeyInput(authentication.recoveryKey)) {
+      return errorResponse('INVALID_REQUEST', '请输入有效的恢复密钥。')
+    }
+
+    if (!isValidNewMasterPassword(authentication.newMasterPassword)) {
+      return errorResponse(
+        'INVALID_REQUEST',
+        `新主密码至少需要 ${MINIMUM_MASTER_PASSWORD_LENGTH} 个字符。`,
+      )
+    }
+
+    if (isLegacyEncryptedVault(backup.encryptedVault)) {
+      return errorResponse(
+        'BACKUP_IMPORT_FAILED',
+        '旧版备份没有恢复密钥，请改用原主密码导入。',
+      )
+    }
+
+    const unlocked = await unlockWithRecoveryKey(
+      backup.encryptedVault,
+      authentication.recoveryKey,
+    )
+    const withNewMasterPassword = await replaceMasterPasswordSlot(
+      backup.encryptedVault,
+      unlocked.sessionDataKey,
+      authentication.newMasterPassword,
+    )
+    const rotated = await rotateRecoveryKeySlot(
+      withNewMasterPassword,
+      unlocked.sessionDataKey,
+    )
+    const importedVault = await encryptVaultWithSessionDataKey(
+      unlocked.payload,
+      rotated.encryptedVault,
+      unlocked.sessionDataKey,
+    )
+
+    await replaceVaultAfterVerifiedImport(
+      importedVault,
+      unlocked.sessionDataKey,
+    )
+
+    return successResponse(unlockedStatus(), rotated.recoveryKey)
+  } catch {
+    return errorResponse(
+      'BACKUP_IMPORT_FAILED',
+      '备份文件、主密码或恢复密钥不正确，现有密码库未被覆盖。',
+    )
+  }
+}
+
+async function replaceVaultAfterVerifiedImport(
+  importedVault: EncryptedVault,
+  sessionDataKey: string,
+): Promise<void> {
+  const previousVault = await getStoredVault()
+  const previousSessionDataKey = await getSessionDataKey()
+
+  try {
+    await saveStoredVault(importedVault)
+    await saveSessionDataKey(sessionDataKey)
+  } catch (error) {
+    if (previousVault) {
+      await saveStoredVault(previousVault)
+    }
+    if (previousSessionDataKey) {
+      await saveSessionDataKey(previousSessionDataKey)
+    } else {
+      await clearSessionDataKey()
+    }
+    throw error
+  }
+}
+
+async function listCredentials(
+  pageUrl: string,
+  siteId?: string,
+): Promise<VaultResponse> {
   const context = await getUnlockedVaultContext()
 
   if (!context) {
@@ -344,11 +527,23 @@ async function listCredentials(origin: string): Promise<VaultResponse> {
   }
 
   try {
+    const activeSite = resolveSiteProfileForPage(
+      context.payload,
+      pageUrl,
+      siteId,
+    )
+
     return {
       ok: true,
       status: unlockedStatus(),
-      credentials: listCredentialsForOrigin(context.payload, origin),
-      siteAlias: getSiteAlias(context.payload, origin),
+      credentials: listCredentialsForSite(context.payload, activeSite?.id ?? null),
+      siteProfiles: listSiteProfilesForPage(context.payload, pageUrl),
+      activeSite: activeSite
+        ? listSiteProfilesForPage(context.payload, pageUrl).find(
+            (site) => site.id === activeSite.id,
+          ) ?? null
+        : null,
+      siteAlias: activeSite?.alias ?? '',
     }
   } catch {
     return errorResponse('INVALID_REQUEST', '当前页面地址不支持保存账号。')
@@ -370,7 +565,8 @@ async function listSites(): Promise<VaultResponse> {
 }
 
 async function updateSiteAlias(
-  origin: string,
+  pageUrl: string,
+  siteId: string | undefined,
   alias: string,
 ): Promise<VaultResponse> {
   const context = await getUnlockedVaultContext()
@@ -380,9 +576,13 @@ async function updateSiteAlias(
   }
 
   try {
-    const payload = setSiteAlias(context.payload, origin, alias)
+    const updated = setSiteAlias(
+      context.payload,
+      { pageUrl, siteId, alias },
+      { now: new Date().toISOString(), createSiteId: () => crypto.randomUUID() },
+    )
     const encryptedVault = await encryptVaultWithSessionDataKey(
-      payload,
+      updated.payload,
       context.encryptedVault,
       context.sessionDataKey,
     )
@@ -391,14 +591,19 @@ async function updateSiteAlias(
     return {
       ok: true,
       status: unlockedStatus(),
-      siteAlias: getSiteAlias(payload, origin),
+      siteProfiles: listSiteProfilesForPage(updated.payload, pageUrl),
+      activeSite:
+        listSiteProfilesForPage(updated.payload, pageUrl).find(
+          (site) => site.id === updated.site.id,
+        ) ?? null,
+      siteAlias: updated.site.alias,
     }
   } catch {
     return errorResponse('INVALID_REQUEST', '登录页别名格式不正确。')
   }
 }
 
-async function removeSiteCredentials(origin: string): Promise<VaultResponse> {
+async function removeSiteCredentials(siteId: string): Promise<VaultResponse> {
   const context = await getUnlockedVaultContext()
 
   if (!context) {
@@ -406,7 +611,7 @@ async function removeSiteCredentials(origin: string): Promise<VaultResponse> {
   }
 
   try {
-    const deleted = deleteCredentialsForOrigin(context.payload, origin)
+    const deleted = deleteCredentialsForSite(context.payload, siteId)
     const encryptedVault = await encryptVaultWithSessionDataKey(
       deleted.payload,
       context.encryptedVault,
@@ -432,7 +637,7 @@ async function getCredential(credentialId: string): Promise<VaultResponse> {
     return errorResponse('VAULT_LOCKED', '密码库已锁定，请重新解锁。')
   }
 
-  const credential = getCredentialById(context.payload, credentialId)
+  const credential = getCredentialDetails(context.payload, credentialId)
 
   if (!credential) {
     return errorResponse('INVALID_REQUEST', '找不到要编辑的账号。')
@@ -457,7 +662,8 @@ async function persistCredential(
   try {
     const saved = saveCredential(context.payload, input, {
       now: new Date().toISOString(),
-      createId: () => crypto.randomUUID(),
+      createCredentialId: () => crypto.randomUUID(),
+      createSiteId: () => crypto.randomUUID(),
     })
     const encryptedVault = await encryptVaultWithSessionDataKey(
       saved.payload,
@@ -469,8 +675,14 @@ async function persistCredential(
     return {
       ok: true,
       status: unlockedStatus(),
-      credential: saved.credential,
-      credentials: listCredentialsForOrigin(saved.payload, saved.credential.origin),
+      credential: getCredentialDetails(saved.payload, saved.credential.id) ?? undefined,
+      credentials: listCredentialsForSite(saved.payload, saved.site.id),
+      siteProfiles: listSiteProfilesForPage(saved.payload, saved.site.loginUrl),
+      activeSite:
+        listSiteProfilesForPage(saved.payload, saved.site.loginUrl).find(
+          (site) => site.id === saved.site.id,
+        ) ?? null,
+      siteAlias: saved.site.alias,
     }
   } catch {
     return errorResponse('INVALID_REQUEST', '账号信息不完整或格式不正确。')
@@ -484,7 +696,7 @@ async function removeCredential(credentialId: string): Promise<VaultResponse> {
     return errorResponse('VAULT_LOCKED', '密码库已锁定，请重新解锁。')
   }
 
-  const credential = getCredentialById(context.payload, credentialId)
+  const credential = getCredentialDetails(context.payload, credentialId)
 
   if (!credential) {
     return errorResponse('INVALID_REQUEST', '找不到要删除的账号。')
@@ -499,10 +711,20 @@ async function removeCredential(credentialId: string): Promise<VaultResponse> {
     )
     await saveStoredVault(encryptedVault)
 
+    const siteProfiles = listSiteProfilesForPage(payload, credential.loginUrl)
+    const nextActiveSite = resolveSiteProfileForPage(
+      payload,
+      credential.loginUrl,
+    )
+
     return {
       ok: true,
       status: unlockedStatus(),
-      credentials: listCredentialsForOrigin(payload, credential.origin),
+      credentials: listCredentialsForSite(payload, nextActiveSite?.id ?? null),
+      siteProfiles,
+      activeSite: nextActiveSite
+        ? siteProfiles.find((site) => site.id === nextActiveSite.id) ?? null
+        : null,
     }
   } catch {
     return errorResponse('INVALID_REQUEST', '删除账号失败。')
@@ -519,7 +741,7 @@ async function fillCredential(
     return errorResponse('VAULT_LOCKED', '密码库已锁定，请重新解锁。')
   }
 
-  const credential = getCredentialById(context.payload, credentialId)
+  const credential = getCredentialDetails(context.payload, credentialId)
 
   if (!credential) {
     return errorResponse('INVALID_REQUEST', '找不到要填入的账号。')
@@ -535,8 +757,14 @@ async function fillCredential(
 
     const currentOrigin = normalizeHttpOrigin(tab.url)
 
+    const site = getSiteProfileById(context.payload, credential.siteId)
+
+    if (!site) {
+      return errorResponse('INVALID_REQUEST', '找不到账号所属的登录页。')
+    }
+
     if (
-      currentOrigin !== credential.origin ||
+      currentOrigin !== site.origin ||
       currentOrigin !== normalizedExpectedOrigin
     ) {
       return errorResponse(

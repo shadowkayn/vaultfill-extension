@@ -1,37 +1,55 @@
 import { describe, expect, it } from 'vitest'
 import { createEmptyVaultPayload } from '../crypto/types'
 import {
-  deleteCredentialsForOrigin,
+  deleteCredentialsForSite,
   deleteCredential,
   getCredentialById,
-  getSiteAlias,
-  listCredentialsForOrigin,
+  getCredentialDetails,
+  listCredentialsForSite,
   listSavedSites,
+  listSiteProfilesForPage,
   normalizeHttpOrigin,
+  resolveSiteProfileForPage,
   saveCredential,
   setSiteAlias,
 } from './credential-service'
 
 const now = '2026-10-29T00:00:00.000Z'
 
-describe('credential service', () => {
-  it('creates a credential and returns a summary without its password', () => {
-    const saved = saveCredential(
-      createEmptyVaultPayload(),
-      {
-        label: '管理员',
-        origin: 'https://example.com/login',
-        username: 'admin@example.com',
-        password: 'site password',
-      },
-      { now, createId: () => 'credential-1' },
-    )
-    const summaries = listCredentialsForOrigin(
-      saved.payload,
-      'https://example.com/another-page',
-    )
+function saveTestCredential(
+  payload = createEmptyVaultPayload(),
+  overrides: Partial<Parameters<typeof saveCredential>[1]> = {},
+  ids = { credential: 'credential-1', site: 'site-1' },
+) {
+  return saveCredential(
+    payload,
+    {
+      label: '管理员',
+      origin: 'https://example.com',
+      loginUrl: 'https://example.com/admin/login',
+      username: 'admin@example.com',
+      password: 'site password',
+      ...overrides,
+    },
+    {
+      now,
+      createCredentialId: () => ids.credential,
+      createSiteId: () => ids.site,
+    },
+  )
+}
 
-    expect(saved.credential.origin).toBe('https://example.com')
+describe('credential service', () => {
+  it('creates a login-page profile and links the credential by site id', () => {
+    const saved = saveTestCredential()
+    const summaries = listCredentialsForSite(saved.payload, saved.site.id)
+
+    expect(saved.site).toMatchObject({
+      id: 'site-1',
+      origin: 'https://example.com',
+      loginUrl: 'https://example.com/admin/login',
+    })
+    expect(saved.credential.siteId).toBe('site-1')
     expect(summaries).toEqual([
       {
         id: 'credential-1',
@@ -43,172 +61,169 @@ describe('credential service', () => {
     expect(summaries[0]).not.toHaveProperty('password')
   })
 
-  it('updates a credential while preserving its id and creation time', () => {
-    const created = saveCredential(
-      createEmptyVaultPayload(),
+  it('keeps different login routes on the same origin as separate profiles', () => {
+    const first = saveTestCredential()
+    const second = saveTestCredential(
+      first.payload,
       {
-        label: '旧名称',
-        origin: 'https://example.com',
-        username: 'old-user',
-        password: 'old-password',
+        label: '客户账号',
+        loginUrl: 'https://example.com/customer/login',
+        username: 'customer',
       },
-      { now, createId: () => 'credential-1' },
+      { credential: 'credential-2', site: 'site-2' },
     )
-    const updated = saveCredential(
+
+    expect(second.payload.sites).toHaveLength(2)
+    expect(listSavedSites(second.payload)).toEqual([
+      expect.objectContaining({
+        id: 'site-1',
+        loginUrl: 'https://example.com/admin/login',
+        credentialCount: 1,
+      }),
+      expect.objectContaining({
+        id: 'site-2',
+        loginUrl: 'https://example.com/customer/login',
+        credentialCount: 1,
+      }),
+    ])
+    expect(
+      resolveSiteProfileForPage(
+        second.payload,
+        'https://example.com/customer/login',
+      )?.id,
+    ).toBe('site-2')
+    expect(
+      resolveSiteProfileForPage(second.payload, 'https://example.com/home'),
+    ).toBeNull()
+  })
+
+  it('reuses a profile when another account uses the same login URL', () => {
+    const first = saveTestCredential()
+    const second = saveTestCredential(
+      first.payload,
+      { label: '普通用户', username: 'user@example.com' },
+      { credential: 'credential-2', site: 'unused-site' },
+    )
+
+    expect(second.payload.sites).toHaveLength(1)
+    expect(second.credential.siteId).toBe(first.site.id)
+    expect(listCredentialsForSite(second.payload, first.site.id)).toHaveLength(2)
+  })
+
+  it('updates a credential and exposes its login-page details', () => {
+    const created = saveTestCredential()
+    const updated = saveTestCredential(
       created.payload,
       {
-        id: 'credential-1',
+        id: created.credential.id,
+        siteId: created.site.id,
         label: '新名称',
-        origin: 'https://example.com',
         username: 'new-user',
         password: 'new-password',
       },
-      {
-        now: '2026-10-30T00:00:00.000Z',
-        createId: () => 'unused',
-      },
+      { credential: 'unused', site: 'unused' },
     )
 
     expect(updated.credential.id).toBe('credential-1')
     expect(updated.credential.createdAt).toBe(now)
-    expect(updated.credential.password).toBe('new-password')
+    expect(getCredentialDetails(updated.payload, 'credential-1')).toMatchObject({
+      origin: 'https://example.com',
+      loginUrl: 'https://example.com/admin/login',
+      password: 'new-password',
+    })
   })
 
-  it('deletes a credential by id', () => {
-    const created = saveCredential(
-      createEmptyVaultPayload(),
-      {
-        label: '测试账号',
-        origin: 'https://example.com',
-        username: 'tester',
-        password: 'password',
-      },
-      { now, createId: () => 'credential-1' },
-    )
-
-    const payload = deleteCredential(created.payload, 'credential-1')
-    expect(getCredentialById(payload, 'credential-1')).toBeNull()
-  })
-
-  it('rejects unsupported origins', () => {
-    expect(() => normalizeHttpOrigin('chrome://extensions')).toThrow()
-  })
-
-  it('stores a trimmed alias and lists grouped saved sites', () => {
-    const first = saveCredential(
-      createEmptyVaultPayload(),
-      {
-        label: '管理员',
-        origin: 'https://example.com/login',
-        username: 'admin',
-        password: 'password',
-      },
-      { now, createId: () => 'credential-1' },
-    )
-    const second = saveCredential(
+  it('moves one account to a new profile when a shared login route is edited', () => {
+    const first = saveTestCredential()
+    const second = saveTestCredential(
       first.payload,
-      {
-        label: '普通用户',
-        origin: 'https://example.com/other',
-        username: 'user',
-        password: 'password',
-      },
-      {
-        now: '2026-10-30T00:00:00.000Z',
-        createId: () => 'credential-2',
-      },
+      { label: '普通用户', username: 'user@example.com' },
+      { credential: 'credential-2', site: 'unused-site' },
     )
-    const withAlias = setSiteAlias(
+    const moved = saveTestCredential(
       second.payload,
-      'https://example.com/path',
-      '  公司后台  ',
+      {
+        id: second.credential.id,
+        siteId: first.site.id,
+        label: '普通用户',
+        loginUrl: 'https://example.com/customer/login',
+        username: 'user@example.com',
+      },
+      { credential: 'unused', site: 'site-2' },
     )
 
-    expect(getSiteAlias(withAlias, 'https://example.com')).toBe('公司后台')
-    expect(listSavedSites(withAlias)).toEqual([
-      {
-        origin: 'https://example.com',
-        hostname: 'example.com',
-        alias: '公司后台',
-        loginUrl: 'https://example.com/',
-        credentialCount: 2,
-        updatedAt: '2026-10-30T00:00:00.000Z',
-      },
-    ])
+    expect(moved.payload.sites).toHaveLength(2)
+    expect(getCredentialById(moved.payload, 'credential-1')?.siteId).toBe('site-1')
+    expect(getCredentialById(moved.payload, 'credential-2')?.siteId).toBe('site-2')
+    expect(moved.site.loginUrl).toBe('https://example.com/customer/login')
   })
 
-  it('deletes every credential and the alias for one site only', () => {
-    const first = saveCredential(
-      createEmptyVaultPayload(),
-      {
-        label: '站点 A',
-        origin: 'https://a.example.com',
-        username: 'a',
-        password: 'password',
-      },
-      { now, createId: () => 'credential-a' },
-    )
-    const second = saveCredential(
+  it('stores an alias on one exact login-page profile', () => {
+    const first = saveTestCredential()
+    const second = saveTestCredential(
       first.payload,
-      {
-        label: '站点 B',
-        origin: 'https://b.example.com',
-        username: 'b',
-        password: 'password',
-      },
-      { now, createId: () => 'credential-b' },
+      { loginUrl: 'https://example.com/customer/login' },
+      { credential: 'credential-2', site: 'site-2' },
     )
-    const withAlias = setSiteAlias(second.payload, 'https://a.example.com', '站点 A')
-    const deleted = deleteCredentialsForOrigin(withAlias, 'https://a.example.com/login')
+    const updated = setSiteAlias(
+      second.payload,
+      {
+        pageUrl: first.site.loginUrl,
+        siteId: first.site.id,
+        alias: '  公司管理员入口  ',
+      },
+      { now, createSiteId: () => 'unused' },
+    )
 
-    expect(deleted.deletedCredentialCount).toBe(1)
-    expect(deleted.payload.credentials).toHaveLength(1)
-    expect(deleted.payload.credentials[0].origin).toBe('https://b.example.com')
-    expect(getSiteAlias(deleted.payload, 'https://a.example.com')).toBe('')
+    expect(updated.site.alias).toBe('公司管理员入口')
+    expect(updated.payload.sites.find((site) => site.id === 'site-2')?.alias).toBe('')
+    expect(listSiteProfilesForPage(updated.payload, first.site.loginUrl)).toHaveLength(2)
   })
 
   it('stores a site alias without a character limit', () => {
     const alias = '这是一个不限制字符数量的登录页面别名'
-    const payload = setSiteAlias(
+    const updated = setSiteAlias(
       createEmptyVaultPayload(),
-      'https://example.com',
-      `  ${alias}  `,
+      { pageUrl: 'https://example.com/login', alias: `  ${alias}  ` },
+      { now, createSiteId: () => 'site-1' },
     )
 
-    expect(getSiteAlias(payload, 'https://example.com')).toBe(alias)
+    expect(updated.site.alias).toBe(alias)
   })
 
-  it('stores a full same-origin login route and rejects another origin', () => {
-    const saved = saveCredential(
-      createEmptyVaultPayload(),
+  it('deletes one profile and only its linked credentials', () => {
+    const first = saveTestCredential()
+    const second = saveTestCredential(
+      first.payload,
       {
-        label: '管理员',
-        origin: 'https://example.com',
-        loginUrl: 'https://example.com/auth/login?from=admin',
-        username: 'admin',
-        password: 'password',
+        origin: 'https://other.example.com',
+        loginUrl: 'https://other.example.com/login',
       },
-      { now, createId: () => 'credential-1' },
+      { credential: 'credential-2', site: 'site-2' },
     )
+    const deleted = deleteCredentialsForSite(second.payload, first.site.id)
 
-    expect(saved.credential.loginUrl).toBe(
-      'https://example.com/auth/login?from=admin',
-    )
-    expect(listSavedSites(saved.payload)[0].loginUrl).toBe(
-      'https://example.com/auth/login?from=admin',
-    )
+    expect(deleted.deletedCredentialCount).toBe(1)
+    expect(deleted.payload.sites.map((site) => site.id)).toEqual(['site-2'])
+    expect(deleted.payload.credentials.map((credential) => credential.id)).toEqual([
+      'credential-2',
+    ])
+  })
+
+  it('removes an empty profile after deleting its last credential', () => {
+    const created = saveTestCredential()
+    const payload = deleteCredential(created.payload, created.credential.id)
+
+    expect(getCredentialById(payload, created.credential.id)).toBeNull()
+    expect(payload.sites).toHaveLength(0)
+  })
+
+  it('rejects unsupported origins and cross-origin login URLs', () => {
+    expect(() => normalizeHttpOrigin('chrome://extensions')).toThrow()
     expect(() =>
-      saveCredential(
-        createEmptyVaultPayload(),
-        {
-          label: '管理员',
-          origin: 'https://example.com',
-          loginUrl: 'https://evil.example/login',
-          username: 'admin',
-          password: 'password',
-        },
-        { now, createId: () => 'credential-2' },
-      ),
+      saveTestCredential(createEmptyVaultPayload(), {
+        loginUrl: 'https://evil.example/login',
+      }),
     ).toThrow()
   })
 })

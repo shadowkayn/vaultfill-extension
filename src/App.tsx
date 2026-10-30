@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { BackupManager } from './backup/BackupManager'
 import { FishButton, FishMascot } from './components/FishMascot'
 import { FISH_GUARDIAN_IMAGE, FISH_IMAGES } from './components/fish-assets'
 import { CredentialManager } from './credentials/CredentialManager'
@@ -21,7 +22,13 @@ type CurrentSite = {
   isLoginPage: boolean
 }
 
-type VaultView = 'default' | 'recover' | 'reset' | 'change-password' | 'sites'
+type VaultView =
+  | 'default'
+  | 'recover'
+  | 'reset'
+  | 'change-password'
+  | 'sites'
+  | 'backup'
 
 function App() {
   const [currentSite, setCurrentSite] = useState<CurrentSite | null>(null)
@@ -250,7 +257,7 @@ function App() {
           <>
             {screen === 'loading' && <LoadingState error={formError} />}
 
-            {screen === 'setup' && (
+            {screen === 'setup' && view === 'default' && (
               <CreateVaultForm
                 newPassword={newMasterPassword}
                 confirmedPassword={confirmedPassword}
@@ -259,6 +266,7 @@ function App() {
                 onNewPasswordChange={setNewMasterPassword}
                 onConfirmedPasswordChange={setConfirmedPassword}
                 onSubmit={handleCreateVault}
+                onImportBackup={() => switchView('backup')}
               />
             )}
 
@@ -272,6 +280,7 @@ function App() {
                 onSubmit={handleUnlockVault}
                 onRecover={() => switchView('recover')}
                 onReset={() => switchView('reset')}
+                onImportBackup={() => switchView('backup')}
               />
             )}
 
@@ -313,6 +322,7 @@ function App() {
                 onChangePassword={() => switchView('change-password')}
                 onRotateRecoveryKey={() => void handleRotateRecoveryKey()}
                 onManageSites={() => switchView('sites')}
+                onManageBackup={() => switchView('backup')}
                 onLock={() => void handleLockVault()}
                 onSiteAliasChange={handleSiteAliasChange}
                 onVaultLocked={handleVaultLocked}
@@ -324,6 +334,16 @@ function App() {
                 currentOrigin={currentSite?.supported ? currentSite.origin : null}
                 onBack={() => switchView('default')}
                 onCurrentSiteDeleted={() => setCurrentSiteAlias('')}
+                onVaultLocked={handleVaultLocked}
+              />
+            )}
+
+            {screen !== 'loading' && view === 'backup' && (
+              <BackupManager
+                canExport={screen === 'unlocked'}
+                hasExistingVault={vaultStatus?.hasVault ?? false}
+                onBack={() => switchView('default')}
+                onImported={applySuccessfulResponse}
                 onVaultLocked={handleVaultLocked}
               />
             )}
@@ -367,7 +387,9 @@ type PasswordFormProps = {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }
 
-function CreateVaultForm(props: PasswordFormProps) {
+function CreateVaultForm(
+  props: PasswordFormProps & { onImportBackup: () => void },
+) {
   return (
     <form className="vault-form" onSubmit={props.onSubmit}>
       <FishMascot badge="🔐" variant="create" />
@@ -380,6 +402,9 @@ function CreateVaultForm(props: PasswordFormProps) {
       <FishButton variant="create" type="submit" disabled={props.submitting}>
         {props.submitting ? '鱼鱼正在加密…' : '创建并交给鱼鱼守护'}
       </FishButton>
+      <button className="backup-entry-link" type="button" onClick={props.onImportBackup}>
+        已有备份？恢复密码库
+      </button>
       <p className="warning">主密码和恢复密钥同时丢失后，数据无法恢复。</p>
     </form>
   )
@@ -424,6 +449,7 @@ function UnlockVaultForm({
   onSubmit,
   onRecover,
   onReset,
+  onImportBackup,
 }: {
   password: string
   error: string
@@ -433,6 +459,7 @@ function UnlockVaultForm({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onRecover: () => void
   onReset: () => void
+  onImportBackup: () => void
 }) {
   return (
     <form className="vault-form" onSubmit={onSubmit}>
@@ -458,6 +485,7 @@ function UnlockVaultForm({
       </FishButton>
       <div className="text-actions">
         {!legacyVault && <button type="button" onClick={onRecover}>忘记主密码</button>}
+        <button type="button" onClick={onImportBackup}>从备份恢复</button>
         <button type="button" className="danger-link" onClick={onReset}>重置密码库</button>
       </div>
     </form>
@@ -664,6 +692,7 @@ function UnlockedVaultPanel({
   onChangePassword,
   onRotateRecoveryKey,
   onManageSites,
+  onManageBackup,
   onLock,
   onSiteAliasChange,
   onVaultLocked,
@@ -678,6 +707,7 @@ function UnlockedVaultPanel({
   onChangePassword: () => void
   onRotateRecoveryKey: () => void
   onManageSites: () => void
+  onManageBackup: () => void
   onLock: () => void
   onSiteAliasChange: (alias: string) => void
   onVaultLocked: () => void
@@ -701,6 +731,9 @@ function UnlockedVaultPanel({
       <FormError message={error} />
       <FishButton variant="sites" tone="secondary" type="button" onClick={onManageSites}>
         查看已保存登录页
+      </FishButton>
+      <FishButton variant="backup" tone="secondary" type="button" onClick={onManageBackup}>
+        备份与恢复
       </FishButton>
       <div className="management-actions">
         <button type="button" onClick={onChangePassword} disabled={submitting}>修改主密码</button>

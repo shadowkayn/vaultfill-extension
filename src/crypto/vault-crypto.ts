@@ -4,6 +4,7 @@ import { generateRecoveryKey, normalizeRecoveryKey } from './recovery-key'
 import {
   PBKDF2_ITERATIONS,
   VAULT_FORMAT_VERSION,
+  parseVaultPayload,
   type EncryptedData,
   type EncryptedVault,
   type VaultPayload,
@@ -29,7 +30,6 @@ export type NewEncryptedVaultResult = {
   recoveryKey: string
   sessionDataKey: string
 }
-
 export type VaultUnlockResult = {
   payload: VaultPayload
   sessionDataKey: string
@@ -242,12 +242,7 @@ async function decryptVaultPayload(
     vaultAdditionalData,
   )
   const payload = JSON.parse(textDecoder.decode(plaintext)) as unknown
-
-  if (!isVaultPayload(payload)) {
-    throw new Error('The decrypted vault has an unsupported format.')
-  }
-
-  return payload
+  return parseVaultPayload(payload)
 }
 
 async function encryptBytes(
@@ -292,33 +287,4 @@ async function decryptBytes(
   )
 
   return new Uint8Array(plaintext)
-}
-
-function isVaultPayload(value: unknown): value is VaultPayload {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-
-  const payload = value as Partial<VaultPayload>
-  return (
-    payload.version === 1 &&
-    Array.isArray(payload.credentials) &&
-    isOptionalSiteAliasRecord(payload.siteAliases)
-  )
-}
-
-function isOptionalSiteAliasRecord(value: unknown): boolean {
-  if (value === undefined) {
-    return true
-  }
-
-  return (
-    !!value &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    Object.entries(value).every(
-      ([origin, alias]) =>
-        typeof origin === 'string' && typeof alias === 'string',
-    )
-  )
 }

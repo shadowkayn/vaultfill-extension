@@ -18,6 +18,11 @@ it('decrypts the version 1 vault format for migration', async () => {
     PBKDF2_ITERATIONS,
   )
   const key = await importVaultKey(keyBytes)
+  const legacyPayload = {
+    version: 1,
+    credentials: [],
+    siteAliases: {},
+  }
   const ciphertext = await crypto.subtle.encrypt(
     {
       name: 'AES-GCM',
@@ -26,7 +31,7 @@ it('decrypts the version 1 vault format for migration', async () => {
       tagLength: 128,
     },
     key,
-    new TextEncoder().encode(JSON.stringify(createEmptyVaultPayload())),
+    new TextEncoder().encode(JSON.stringify(legacyPayload)),
   )
   const timestamp = new Date().toISOString()
   const legacyVault: LegacyEncryptedVault = {

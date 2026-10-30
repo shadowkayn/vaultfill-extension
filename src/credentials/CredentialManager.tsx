@@ -1,8 +1,9 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { FishButton, FishMascot } from '../components/FishMascot'
 import type {
   CredentialInput,
   CredentialSummary,
+  SiteProfileSummary,
   VaultResponse,
 } from '../shared/messages'
 import { sendVaultMessage } from '../shared/runtime'
@@ -40,6 +41,8 @@ export function CredentialManager({
   onSiteAliasChange: (alias: string) => void
 }) {
   const [credentials, setCredentials] = useState<CredentialSummary[]>([])
+  const [siteProfiles, setSiteProfiles] = useState<SiteProfileSummary[]>([])
+  const [activeSite, setActiveSite] = useState<SiteProfileSummary | null>(null)
   const [siteAlias, setSiteAlias] = useState('')
   const [siteAliasDraft, setSiteAliasDraft] = useState('')
   const [isEditingSiteAlias, setIsEditingSiteAlias] = useState(false)
@@ -53,8 +56,28 @@ export function CredentialManager({
   const [fillStatus, setFillStatus] = useState('')
   const [error, setError] = useState('')
 
+  const applySiteContext = useCallback((
+    response: Extract<VaultResponse, { ok: true }>,
+  ) => {
+    const nextActiveSite = response.activeSite ?? null
+    const nextAlias = nextActiveSite?.alias ?? response.siteAlias ?? ''
+
+    if (response.credentials !== undefined) {
+      setCredentials(response.credentials)
+    }
+    if (response.siteProfiles !== undefined) {
+      setSiteProfiles(response.siteProfiles)
+    }
+    setActiveSite(nextActiveSite)
+    setSiteAlias(nextAlias)
+    setSiteAliasDraft(nextAlias)
+    onSiteAliasChange(nextAlias)
+  }, [onSiteAliasChange])
+
   useEffect(() => {
-    if (!origin) {
+    const pageUrl = currentPageUrl ?? origin
+
+    if (!pageUrl) {
       return
     }
 
@@ -62,7 +85,7 @@ export function CredentialManager({
 
     void sendVaultMessage({
         type: 'LIST_CREDENTIALS',
-        origin,
+        pageUrl,
       })
       .then((response) => {
         if (!active) {
@@ -77,11 +100,7 @@ export function CredentialManager({
           return
         }
 
-        setCredentials(response.credentials ?? [])
-        const nextAlias = response.siteAlias ?? ''
-        setSiteAlias(nextAlias)
-        setSiteAliasDraft(nextAlias)
-        onSiteAliasChange(nextAlias)
+        applySiteContext(response)
       })
       .catch(() => {
         if (active) {
@@ -97,7 +116,31 @@ export function CredentialManager({
     return () => {
       active = false
     }
-  }, [origin, onSiteAliasChange, onVaultLocked])
+  }, [applySiteContext, currentPageUrl, origin, onVaultLocked])
+
+  async function selectSiteProfile(siteId: string): Promise<void> {
+    const pageUrl = currentPageUrl ?? origin
+    if (!pageUrl || !siteId) return
+
+    setIsLoading(true)
+    setError('')
+    setFillStatus('')
+
+    try {
+      const response = await sendVaultMessage({
+        type: 'LIST_CREDENTIALS',
+        pageUrl,
+        siteId,
+      })
+
+      if (handleResponseError(response)) return
+      applySiteContext(response)
+    } catch {
+      setError('切换登录页失败，请稍后重试。')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   function handleResponseError(response: VaultResponse): response is Extract<VaultResponse, { ok: false }> {
     if (response.ok) {
@@ -117,7 +160,7 @@ export function CredentialManager({
   function startCreatingCredential() {
     setForm({
       ...emptyCredentialForm,
-      loginUrl: currentPageUrl ?? origin ?? '',
+      loginUrl: activeSite?.loginUrl ?? currentPageUrl ?? origin ?? '',
     })
     setShowPassword(false)
     setError('')
@@ -128,7 +171,9 @@ export function CredentialManager({
   async function saveSiteAlias(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (!origin) {
+    const pageUrl = currentPageUrl ?? origin
+
+    if (!pageUrl) {
       return
     }
 
@@ -138,7 +183,8 @@ export function CredentialManager({
     try {
       const response = await sendVaultMessage({
         type: 'SET_SITE_ALIAS',
-        origin,
+        pageUrl,
+        ...(activeSite ? { siteId: activeSite.id } : {}),
         alias: siteAliasDraft,
       })
 
@@ -146,11 +192,8 @@ export function CredentialManager({
         return
       }
 
-      const nextAlias = response.siteAlias ?? ''
-      setSiteAlias(nextAlias)
-      setSiteAliasDraft(nextAlias)
+      applySiteContext(response)
       setIsEditingSiteAlias(false)
-      onSiteAliasChange(nextAlias)
     } catch {
       setError('保存登录页别名失败，请稍后重试。')
     } finally {
@@ -181,7 +224,7 @@ export function CredentialManager({
       setForm({
         id: response.credential.id,
         label: response.credential.label,
-        loginUrl: response.credential.loginUrl ?? currentPageUrl ?? origin ?? '',
+        loginUrl: response.credential.loginUrl,
         username: response.credential.username,
         password: response.credential.password,
         notes: response.credential.notes ?? '',
@@ -232,6 +275,7 @@ export function CredentialManager({
 
     const credential: CredentialInput = {
       ...(form.id ? { id: form.id } : {}),
+      ...(activeSite ? { siteId: activeSite.id } : {}),
       label: form.label,
       origin,
       loginUrl: form.loginUrl,
@@ -250,7 +294,7 @@ export function CredentialManager({
         return
       }
 
-      setCredentials(response.credentials ?? [])
+      applySiteContext(response)
       closeSensitiveView()
     } catch {
       setError('保存账号失败，请稍后重试。')
@@ -284,7 +328,7 @@ export function CredentialManager({
         return
       }
 
-      setCredentials(response.credentials ?? [])
+      applySiteContext(response)
       closeSensitiveView()
     } catch {
       setError('删除账号失败，请稍后重试。')
@@ -454,8 +498,49 @@ export function CredentialManager({
     )
   }
 
+  const siteProfilePicker = siteProfiles.length > 1 ? (
+    <div className="site-profile-picker">
+      <label htmlFor="site-profile">此域名保存了多个登录页</label>
+      <div className="site-profile-select">
+        <select
+          id="site-profile"
+          value={activeSite?.id ?? ''}
+          onChange={(event) => void selectSiteProfile(event.target.value)}
+        >
+          <option value="">请选择要管理的登录页</option>
+          {siteProfiles.map((site) => (
+            <option key={site.id} value={site.id}>
+              {formatSiteProfileOption(site)}
+            </option>
+          ))}
+        </select>
+        <span aria-hidden="true" />
+      </div>
+    </div>
+  ) : null
+
+  if (siteProfiles.length > 1 && !activeSite) {
+    return (
+      <div className="credential-list">
+        {siteProfilePicker}
+        <div className="empty-credentials">
+          <FishMascot badge="🧭" compact variant="sites" />
+          <strong>请选择一个登录页</strong>
+          <p>当前地址无法唯一匹配，请选择已有登录页，或为当前路由添加新账号。</p>
+        </div>
+        <CredentialError message={error} />
+        {isLoginPage && (
+          <FishButton variant="add" type="button" onClick={startCreatingCredential}>
+            为当前登录页添加账号
+          </FishButton>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="credential-list">
+      {siteProfilePicker}
       <div className="site-alias-card">
         {isEditingSiteAlias ? (
           <form className="site-alias-form" onSubmit={(event) => void saveSiteAlias(event)}>
@@ -546,4 +631,11 @@ export function CredentialManager({
 
 function CredentialError({ message }: { message: string }) {
   return message ? <p className="form-error">{message}</p> : null
+}
+
+function formatSiteProfileOption(site: SiteProfileSummary): string {
+  const url = new URL(site.loginUrl)
+  const route = `${url.pathname}${url.search}${url.hash}`
+  const name = site.alias ? `${site.alias} · ${route || '/'}` : route || '/'
+  return `${name}（${site.credentialCount} 个账号）`
 }

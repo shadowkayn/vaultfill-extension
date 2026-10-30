@@ -1,6 +1,10 @@
 import { base64ToBytes } from './encoding'
 import { deriveVaultKeyBytes, importVaultKey } from './key-derivation'
-import type { LegacyEncryptedVault, VaultPayload } from './types'
+import {
+  parseVaultPayload,
+  type LegacyEncryptedVault,
+  type VaultPayload,
+} from './types'
 
 const legacyAdditionalData = new TextEncoder().encode('vaultfill:v1')
 const textDecoder = new TextDecoder('utf-8', { fatal: true })
@@ -26,36 +30,5 @@ export async function unlockLegacyVault(
     base64ToBytes(encryptedVault.cipher.ciphertext),
   )
   const payload = JSON.parse(textDecoder.decode(plaintext)) as unknown
-
-  if (!isVaultPayload(payload)) {
-    throw new Error('The legacy vault has an unsupported format.')
-  }
-
-  return payload
-}
-
-function isVaultPayload(value: unknown): value is VaultPayload {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-
-  const payload = value as Partial<VaultPayload>
-  return (
-    payload.version === 1 &&
-    Array.isArray(payload.credentials) &&
-    isOptionalSiteAliasRecord(payload.siteAliases)
-  )
-}
-
-function isOptionalSiteAliasRecord(value: unknown): boolean {
-  if (value === undefined) {
-    return true
-  }
-
-  return (
-    !!value &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    Object.values(value).every((alias) => typeof alias === 'string')
-  )
+  return parseVaultPayload(payload)
 }

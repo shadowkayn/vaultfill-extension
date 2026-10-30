@@ -1,29 +1,39 @@
-import type { Credential } from '../crypto/types'
+import type {
+  BackupImportAuthentication,
+  VaultBackupFile,
+} from '../backup/types'
+import type { Credential, SiteProfile } from '../crypto/types'
 
 export const RESET_VAULT_CONFIRMATION = '删除我的密码库'
+export const IMPORT_VAULT_CONFIRMATION = '覆盖当前密码库'
 
 export type CredentialSummary = Pick<
   Credential,
   'id' | 'label' | 'username' | 'updatedAt'
 >
 
-export type CredentialInput = Pick<
-  Credential,
-  'label' | 'origin' | 'username' | 'password'
-> & {
+export type CredentialInput = Pick<Credential, 'label' | 'username' | 'password'> & {
   id?: string
-  loginUrl?: string
+  siteId?: string
+  origin: string
+  loginUrl: string
   notes?: string
 }
 
-export type SiteSummary = {
+export type CredentialDetails = Credential & {
   origin: string
-  hostname: string
-  alias: string
   loginUrl: string
-  credentialCount: number
-  updatedAt: string
 }
+
+export type SiteProfileSummary = Pick<
+  SiteProfile,
+  'id' | 'alias' | 'origin' | 'loginUrl' | 'updatedAt'
+> & {
+  hostname: string
+  credentialCount: number
+}
+
+export type SiteSummary = SiteProfileSummary
 
 export type VaultStatus = {
   hasVault: boolean
@@ -52,10 +62,17 @@ export type VaultMessage =
       newMasterPassword: string
     }
   | { type: 'ROTATE_RECOVERY_KEY' }
-  | { type: 'LIST_CREDENTIALS'; origin: string }
+  | { type: 'EXPORT_VAULT_BACKUP' }
+  | {
+      type: 'IMPORT_VAULT_BACKUP'
+      backupText: string
+      authentication: BackupImportAuthentication
+      confirmation: string
+    }
+  | { type: 'LIST_CREDENTIALS'; pageUrl: string; siteId?: string }
   | { type: 'LIST_SITES' }
-  | { type: 'SET_SITE_ALIAS'; origin: string; alias: string }
-  | { type: 'DELETE_SITE_CREDENTIALS'; origin: string }
+  | { type: 'SET_SITE_ALIAS'; pageUrl: string; siteId?: string; alias: string }
+  | { type: 'DELETE_SITE_CREDENTIALS'; siteId: string }
   | { type: 'GET_CREDENTIAL'; credentialId: string }
   | { type: 'SAVE_CREDENTIAL'; credential: CredentialInput }
   | { type: 'DELETE_CREDENTIAL'; credentialId: string }
@@ -77,6 +94,8 @@ export type VaultErrorCode =
   | 'VAULT_LOCKED'
   | 'UNLOCK_FAILED'
   | 'RECOVERY_FAILED'
+  | 'BACKUP_EXPORT_FAILED'
+  | 'BACKUP_IMPORT_FAILED'
   | 'ORIGIN_MISMATCH'
   | 'FILL_FAILED'
   | 'STORAGE_ERROR'
@@ -86,9 +105,12 @@ export type VaultResponse =
       ok: true
       status: VaultStatus
       recoveryKey?: string
+      backup?: VaultBackupFile
       credentials?: CredentialSummary[]
-      credential?: Credential
+      credential?: CredentialDetails
       sites?: SiteSummary[]
+      siteProfiles?: SiteProfileSummary[]
+      activeSite?: SiteProfileSummary | null
       siteAlias?: string
       deletedCredentialCount?: number
       fillResult?: FillResult

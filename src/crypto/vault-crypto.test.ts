@@ -59,22 +59,28 @@ describe('vault envelope encryption', () => {
 
   it('keeps saved website credentials out of the serialized vault', async () => {
     const payload = {
-      version: 1 as const,
+      version: 2 as const,
+      sites: [
+        {
+          id: 'site-1',
+          alias: '公司内网后台',
+          origin: 'https://admin.example.com',
+          loginUrl: 'https://admin.example.com/auth/login',
+          createdAt: '2026-10-29T00:00:00.000Z',
+          updatedAt: '2026-10-29T00:00:00.000Z',
+        },
+      ],
       credentials: [
         {
           id: 'credential-1',
+          siteId: 'site-1',
           label: '公司管理员',
-          origin: 'https://admin.example.com',
-          loginUrl: 'https://admin.example.com/auth/login',
           username: 'admin@example.com',
           password: 'a-real-site-password',
           createdAt: '2026-10-29T00:00:00.000Z',
           updatedAt: '2026-10-29T00:00:00.000Z',
         },
       ],
-      siteAliases: {
-        'https://admin.example.com': '公司内网后台',
-      },
     }
     const result = await createEncryptedVault(payload, masterPassword)
     const serializedVault = JSON.stringify(result.encryptedVault)

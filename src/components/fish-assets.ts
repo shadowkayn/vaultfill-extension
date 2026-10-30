@@ -12,6 +12,7 @@ export const FISH_IMAGES = {
   cancel: 'assets/fish-cancel.png',
   add: 'assets/fish-add.png',
   sites: 'assets/fish-sites.png',
+  backup: 'assets/fish-bg-thinking.png',
   clearSite: 'assets/fish-clear-site.png',
 } as const
 
@@ -32,6 +33,7 @@ const ACTION_FISH_VARIANTS = new Set<FishVariant>([
   'cancel',
   'add',
   'sites',
+  'backup',
   'clearSite',
 ])
 

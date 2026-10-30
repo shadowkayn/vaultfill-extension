@@ -1,7 +1,9 @@
-import type { Credential, VaultPayload } from '../crypto/types'
+import type { Credential, SiteProfile, VaultPayload } from '../crypto/types'
 import type {
+  CredentialDetails,
   CredentialInput,
   CredentialSummary,
+  SiteProfileSummary,
   SiteSummary,
 } from '../shared/messages'
 
@@ -11,20 +13,15 @@ const MAX_PASSWORD_LENGTH = 4096
 const MAX_NOTES_LENGTH = 2000
 const MAX_LOGIN_URL_LENGTH = 2048
 
-export function listCredentialsForOrigin(
+export function listCredentialsForSite(
   payload: VaultPayload,
-  origin: string,
+  siteId: string | null,
 ): CredentialSummary[] {
-  const normalizedOrigin = normalizeHttpOrigin(origin)
+  if (!siteId) return []
 
   return payload.credentials
-    .filter((credential) => credential.origin === normalizedOrigin)
-    .map(({ id, label, username, updatedAt }) => ({
-      id,
-      label,
-      username,
-      updatedAt,
-    }))
+    .filter((credential) => credential.siteId === siteId)
+    .map(({ id, label, username, updatedAt }) => ({ id, label, username, updatedAt }))
     .sort((first, second) => first.label.localeCompare(second.label))
 }
 
@@ -32,10 +29,69 @@ export function getCredentialById(
   payload: VaultPayload,
   credentialId: string,
 ): Credential | null {
-  return (
-    payload.credentials.find((credential) => credential.id === credentialId) ??
-    null
+  return payload.credentials.find((credential) => credential.id === credentialId) ?? null
+}
+
+export function getSiteProfileById(
+  payload: VaultPayload,
+  siteId: string,
+): SiteProfile | null {
+  return payload.sites.find((site) => site.id === siteId) ?? null
+}
+
+export function getCredentialDetails(
+  payload: VaultPayload,
+  credentialId: string,
+): CredentialDetails | null {
+  const credential = getCredentialById(payload, credentialId)
+  if (!credential) return null
+
+  const site = getSiteProfileById(payload, credential.siteId)
+  if (!site) return null
+
+  return { ...credential, origin: site.origin, loginUrl: site.loginUrl }
+}
+
+export function listSiteProfilesForPage(
+  payload: VaultPayload,
+  pageUrl: string,
+): SiteProfileSummary[] {
+  const origin = normalizeHttpOrigin(pageUrl)
+
+  return payload.sites
+    .filter((site) => site.origin === origin)
+    .map((site) => toSiteProfileSummary(payload, site))
+    .sort(compareSiteProfiles)
+}
+
+export function resolveSiteProfileForPage(
+  payload: VaultPayload,
+  pageUrl: string,
+  preferredSiteId?: string,
+): SiteProfile | null {
+  const page = normalizeHttpUrl(pageUrl)
+  const candidates = payload.sites.filter((site) => site.origin === page.origin)
+
+  if (preferredSiteId) {
+    const preferred = candidates.find((site) => site.id === preferredSiteId)
+    if (preferred) return preferred
+  }
+
+  const exact = candidates.find((site) => site.loginUrl === page.href)
+  if (exact) return exact
+
+  const samePathAndSearch = candidates.filter((site) => {
+    const loginUrl = new URL(site.loginUrl)
+    return loginUrl.pathname === page.pathname && loginUrl.search === page.search
+  })
+  if (samePathAndSearch.length === 1) return samePathAndSearch[0]
+
+  const samePath = candidates.filter(
+    (site) => new URL(site.loginUrl).pathname === page.pathname,
   )
+  if (samePath.length === 1) return samePath[0]
+
+  return candidates.length === 1 ? candidates[0] : null
 }
 
 export function saveCredential(
@@ -43,9 +99,10 @@ export function saveCredential(
   input: CredentialInput,
   options: {
     now: string
-    createId: () => string
+    createCredentialId: () => string
+    createSiteId: () => string
   },
-): { payload: VaultPayload; credential: Credential } {
+): { payload: VaultPayload; credential: Credential; site: SiteProfile } {
   const normalizedInput = validateCredentialInput(input)
   const existingCredential = normalizedInput.id
     ? getCredentialById(payload, normalizedInput.id)
@@ -55,11 +112,46 @@ export function saveCredential(
     throw new Error('The credential to update does not exist.')
   }
 
+  const currentSite = existingCredential
+    ? getSiteProfileById(payload, existingCredential.siteId)
+    : null
+  const matchingSite = payload.sites.find(
+    (site) => site.loginUrl === normalizedInput.loginUrl,
+  )
+  const currentSiteCredentialCount = currentSite
+    ? payload.credentials.filter((credential) => credential.siteId === currentSite.id).length
+    : 0
+
+  let site: SiteProfile
+  let sites: SiteProfile[]
+
+  if (matchingSite) {
+    site = { ...matchingSite, updatedAt: options.now }
+    sites = payload.sites.map((item) => (item.id === site.id ? site : item))
+  } else if (currentSite && currentSiteCredentialCount === 1) {
+    site = {
+      ...currentSite,
+      origin: normalizedInput.origin,
+      loginUrl: normalizedInput.loginUrl,
+      updatedAt: options.now,
+    }
+    sites = payload.sites.map((item) => (item.id === site.id ? site : item))
+  } else {
+    site = {
+      id: options.createSiteId(),
+      alias: '',
+      origin: normalizedInput.origin,
+      loginUrl: normalizedInput.loginUrl,
+      createdAt: options.now,
+      updatedAt: options.now,
+    }
+    sites = [...payload.sites, site]
+  }
+
   const credential: Credential = {
-    id: existingCredential?.id ?? options.createId(),
+    id: existingCredential?.id ?? options.createCredentialId(),
+    siteId: site.id,
     label: normalizedInput.label,
-    origin: normalizedInput.origin,
-    loginUrl: normalizedInput.loginUrl,
     username: normalizedInput.username,
     password: normalizedInput.password,
     ...(normalizedInput.notes ? { notes: normalizedInput.notes } : {}),
@@ -72,9 +164,18 @@ export function saveCredential(
       )
     : [...payload.credentials, credential]
 
+  if (
+    currentSite &&
+    currentSite.id !== site.id &&
+    !credentials.some((item) => item.siteId === currentSite.id)
+  ) {
+    sites = sites.filter((item) => item.id !== currentSite.id)
+  }
+
   return {
-    payload: { ...payload, credentials },
+    payload: { ...payload, sites, credentials },
     credential,
+    site,
   }
 }
 
@@ -82,121 +183,83 @@ export function deleteCredential(
   payload: VaultPayload,
   credentialId: string,
 ): VaultPayload {
-  const credentials = payload.credentials.filter(
-    (credential) => credential.id !== credentialId,
-  )
-
-  if (credentials.length === payload.credentials.length) {
+  const deletedCredential = getCredentialById(payload, credentialId)
+  if (!deletedCredential) {
     throw new Error('The credential to delete does not exist.')
   }
 
-  const deletedOrigin = payload.credentials.find(
-    (credential) => credential.id === credentialId,
-  )?.origin
-  const siteAliases = { ...(payload.siteAliases ?? {}) }
+  const credentials = payload.credentials.filter(
+    (credential) => credential.id !== credentialId,
+  )
+  const sites = credentials.some(
+    (credential) => credential.siteId === deletedCredential.siteId,
+  )
+    ? payload.sites
+    : payload.sites.filter((site) => site.id !== deletedCredential.siteId)
 
-  if (
-    deletedOrigin &&
-    !credentials.some((credential) => credential.origin === deletedOrigin)
-  ) {
-    delete siteAliases[deletedOrigin]
-  }
-
-  return { ...payload, credentials, siteAliases }
-}
-
-export function getSiteAlias(payload: VaultPayload, origin: string): string {
-  const normalizedOrigin = normalizeHttpOrigin(origin)
-  return normalizeStoredSiteAlias(payload.siteAliases?.[normalizedOrigin])
+  return { ...payload, sites, credentials }
 }
 
 export function setSiteAlias(
   payload: VaultPayload,
-  origin: string,
-  alias: string,
-): VaultPayload {
-  const normalizedOrigin = normalizeHttpOrigin(origin)
-  const normalizedAlias = alias.trim()
+  input: { pageUrl: string; siteId?: string; alias: string },
+  options: { now: string; createSiteId: () => string },
+): { payload: VaultPayload; site: SiteProfile } {
+  const page = normalizeHttpUrl(input.pageUrl)
+  const normalizedAlias = input.alias.trim()
+  const existingSite = resolveSiteProfileForPage(payload, page.href, input.siteId)
+  const site: SiteProfile = existingSite
+    ? { ...existingSite, alias: normalizedAlias, updatedAt: options.now }
+    : {
+        id: options.createSiteId(),
+        alias: normalizedAlias,
+        origin: page.origin,
+        loginUrl: page.href,
+        createdAt: options.now,
+        updatedAt: options.now,
+      }
+  const sites = existingSite
+    ? payload.sites.map((item) => (item.id === site.id ? site : item))
+    : [...payload.sites, site]
 
-  const siteAliases = { ...(payload.siteAliases ?? {}) }
-
-  if (normalizedAlias) {
-    siteAliases[normalizedOrigin] = normalizedAlias
-  } else {
-    delete siteAliases[normalizedOrigin]
-  }
-
-  return { ...payload, siteAliases }
+  return { payload: { ...payload, sites }, site }
 }
 
 export function listSavedSites(payload: VaultPayload): SiteSummary[] {
-  const sites = new Map<string, SiteSummary>()
-
-  for (const credential of payload.credentials) {
-    const existing = sites.get(credential.origin)
-
-    if (existing) {
-      existing.credentialCount += 1
-      if (credential.updatedAt > existing.updatedAt) {
-        existing.updatedAt = credential.updatedAt
-        existing.loginUrl = credential.loginUrl ?? credential.origin
-      }
-      continue
-    }
-
-    const url = new URL(credential.origin)
-    sites.set(credential.origin, {
-      origin: credential.origin,
-      hostname: url.hostname,
-      alias: normalizeStoredSiteAlias(payload.siteAliases?.[credential.origin]),
-      loginUrl: credential.loginUrl ?? credential.origin,
-      credentialCount: 1,
-      updatedAt: credential.updatedAt,
-    })
-  }
-
-  return [...sites.values()].sort((first, second) => {
-    const firstName = first.alias || first.hostname
-    const secondName = second.alias || second.hostname
-    return firstName.localeCompare(secondName)
-  })
+  return payload.sites
+    .map((site) => toSiteProfileSummary(payload, site))
+    .filter((site) => site.credentialCount > 0)
+    .sort(compareSiteProfiles)
 }
 
-function normalizeStoredSiteAlias(value: string | undefined): string {
-  return value?.trim() ?? ''
-}
-
-export function deleteCredentialsForOrigin(
+export function deleteCredentialsForSite(
   payload: VaultPayload,
-  origin: string,
+  siteId: string,
 ): { payload: VaultPayload; deletedCredentialCount: number } {
-  const normalizedOrigin = normalizeHttpOrigin(origin)
+  const site = getSiteProfileById(payload, siteId)
+  if (!site) throw new Error('The login page does not exist.')
+
   const credentials = payload.credentials.filter(
-    (credential) => credential.origin !== normalizedOrigin,
+    (credential) => credential.siteId !== siteId,
   )
   const deletedCredentialCount = payload.credentials.length - credentials.length
 
   if (deletedCredentialCount === 0) {
-    throw new Error('The site does not have saved credentials.')
+    throw new Error('The login page does not have saved credentials.')
   }
 
-  const siteAliases = { ...(payload.siteAliases ?? {}) }
-  delete siteAliases[normalizedOrigin]
-
   return {
-    payload: { ...payload, credentials, siteAliases },
+    payload: {
+      ...payload,
+      sites: payload.sites.filter((item) => item.id !== siteId),
+      credentials,
+    },
     deletedCredentialCount,
   }
 }
 
 export function normalizeHttpOrigin(value: string): string {
-  const url = new URL(value)
-
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new Error('Only HTTP and HTTPS origins are supported.')
-  }
-
-  return url.origin
+  return normalizeHttpUrl(value).origin
 }
 
 function validateCredentialInput(input: CredentialInput): CredentialInput {
@@ -204,30 +267,30 @@ function validateCredentialInput(input: CredentialInput): CredentialInput {
   const username = input.username.trim()
   const notes = input.notes?.trim() ?? ''
   const origin = normalizeHttpOrigin(input.origin)
-  const loginUrl = normalizeLoginUrl(input.loginUrl ?? origin, origin)
+  const loginUrl = normalizeLoginUrl(input.loginUrl, origin)
 
   if (!label || label.length > MAX_LABEL_LENGTH) {
     throw new Error('Account label is invalid.')
   }
-
   if (!username || username.length > MAX_USERNAME_LENGTH) {
     throw new Error('Username is invalid.')
   }
-
   if (!input.password || input.password.length > MAX_PASSWORD_LENGTH) {
     throw new Error('Password is invalid.')
   }
-
   if (notes.length > MAX_NOTES_LENGTH) {
     throw new Error('Notes are too long.')
   }
-
   if (input.id !== undefined && (!input.id || input.id.length > 100)) {
     throw new Error('Credential id is invalid.')
+  }
+  if (input.siteId !== undefined && (!input.siteId || input.siteId.length > 200)) {
+    throw new Error('Site id is invalid.')
   }
 
   return {
     ...(input.id ? { id: input.id } : {}),
+    ...(input.siteId ? { siteId: input.siteId } : {}),
     label,
     origin,
     loginUrl,
@@ -242,16 +305,50 @@ function normalizeLoginUrl(value: string, expectedOrigin: string): string {
     throw new Error('Login URL is invalid.')
   }
 
-  const url = new URL(value)
-
-  if (
-    (url.protocol !== 'https:' && url.protocol !== 'http:') ||
-    url.origin !== expectedOrigin ||
-    url.username ||
-    url.password
-  ) {
+  const url = normalizeHttpUrl(value)
+  if (url.origin !== expectedOrigin) {
     throw new Error('Login URL must use the credential origin.')
   }
 
   return url.href
+}
+
+function normalizeHttpUrl(value: string): URL {
+  const url = new URL(value)
+
+  if (
+    (url.protocol !== 'https:' && url.protocol !== 'http:') ||
+    url.username ||
+    url.password
+  ) {
+    throw new Error('Only HTTP and HTTPS URLs are supported.')
+  }
+
+  return url
+}
+
+function toSiteProfileSummary(
+  payload: VaultPayload,
+  site: SiteProfile,
+): SiteProfileSummary {
+  return {
+    id: site.id,
+    alias: site.alias,
+    origin: site.origin,
+    loginUrl: site.loginUrl,
+    hostname: new URL(site.origin).hostname,
+    credentialCount: payload.credentials.filter(
+      (credential) => credential.siteId === site.id,
+    ).length,
+    updatedAt: site.updatedAt,
+  }
+}
+
+function compareSiteProfiles(
+  first: SiteProfileSummary,
+  second: SiteProfileSummary,
+): number {
+  const firstName = first.alias || first.loginUrl
+  const secondName = second.alias || second.loginUrl
+  return firstName.localeCompare(secondName)
 }
