@@ -40,5 +40,22 @@ function isVaultPayload(value: unknown): value is VaultPayload {
   }
 
   const payload = value as Partial<VaultPayload>
-  return payload.version === 1 && Array.isArray(payload.credentials)
+  return (
+    payload.version === 1 &&
+    Array.isArray(payload.credentials) &&
+    isOptionalSiteAliasRecord(payload.siteAliases)
+  )
+}
+
+function isOptionalSiteAliasRecord(value: unknown): boolean {
+  if (value === undefined) {
+    return true
+  }
+
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.values(value).every((alias) => typeof alias === 'string')
+  )
 }

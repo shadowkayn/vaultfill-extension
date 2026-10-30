@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
+import { FishButton, FishMascot } from '../components/FishMascot'
 import type {
   CredentialInput,
   CredentialSummary,
@@ -9,6 +10,7 @@ import { sendVaultMessage } from '../shared/runtime'
 type CredentialForm = {
   id?: string
   label: string
+  loginUrl: string
   username: string
   password: string
   notes: string
@@ -18,6 +20,7 @@ type CredentialView = 'list' | 'form' | 'delete'
 
 const emptyCredentialForm: CredentialForm = {
   label: '',
+  loginUrl: '',
   username: '',
   password: '',
   notes: '',
@@ -25,12 +28,21 @@ const emptyCredentialForm: CredentialForm = {
 
 export function CredentialManager({
   origin,
+  currentPageUrl,
+  isLoginPage,
   onVaultLocked,
+  onSiteAliasChange,
 }: {
   origin: string | null
+  currentPageUrl: string | null
+  isLoginPage: boolean
   onVaultLocked: () => void
+  onSiteAliasChange: (alias: string) => void
 }) {
   const [credentials, setCredentials] = useState<CredentialSummary[]>([])
+  const [siteAlias, setSiteAlias] = useState('')
+  const [siteAliasDraft, setSiteAliasDraft] = useState('')
+  const [isEditingSiteAlias, setIsEditingSiteAlias] = useState(false)
   const [view, setView] = useState<CredentialView>('list')
   const [form, setForm] = useState<CredentialForm>(emptyCredentialForm)
   const [deleteTarget, setDeleteTarget] = useState<CredentialSummary | null>(null)
@@ -66,6 +78,10 @@ export function CredentialManager({
         }
 
         setCredentials(response.credentials ?? [])
+        const nextAlias = response.siteAlias ?? ''
+        setSiteAlias(nextAlias)
+        setSiteAliasDraft(nextAlias)
+        onSiteAliasChange(nextAlias)
       })
       .catch(() => {
         if (active) {
@@ -81,7 +97,7 @@ export function CredentialManager({
     return () => {
       active = false
     }
-  }, [origin, onVaultLocked])
+  }, [origin, onSiteAliasChange, onVaultLocked])
 
   function handleResponseError(response: VaultResponse): response is Extract<VaultResponse, { ok: false }> {
     if (response.ok) {
@@ -99,11 +115,47 @@ export function CredentialManager({
   }
 
   function startCreatingCredential() {
-    setForm(emptyCredentialForm)
+    setForm({
+      ...emptyCredentialForm,
+      loginUrl: currentPageUrl ?? origin ?? '',
+    })
     setShowPassword(false)
     setError('')
     setFillStatus('')
     setView('form')
+  }
+
+  async function saveSiteAlias(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!origin) {
+      return
+    }
+
+    setIsSubmitting(true)
+    setError('')
+
+    try {
+      const response = await sendVaultMessage({
+        type: 'SET_SITE_ALIAS',
+        origin,
+        alias: siteAliasDraft,
+      })
+
+      if (handleResponseError(response)) {
+        return
+      }
+
+      const nextAlias = response.siteAlias ?? ''
+      setSiteAlias(nextAlias)
+      setSiteAliasDraft(nextAlias)
+      setIsEditingSiteAlias(false)
+      onSiteAliasChange(nextAlias)
+    } catch {
+      setError('保存登录页别名失败，请稍后重试。')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   async function startEditingCredential(credentialId: string): Promise<void> {
@@ -129,6 +181,7 @@ export function CredentialManager({
       setForm({
         id: response.credential.id,
         label: response.credential.label,
+        loginUrl: response.credential.loginUrl ?? currentPageUrl ?? origin ?? '',
         username: response.credential.username,
         password: response.credential.password,
         notes: response.credential.notes ?? '',
@@ -151,8 +204,27 @@ export function CredentialManager({
       return
     }
 
-    if (!form.label.trim() || !form.username.trim() || !form.password) {
-      setError('账号名称、用户名和密码不能为空。')
+    if (
+      !form.label.trim() ||
+      !form.loginUrl.trim() ||
+      !form.username.trim() ||
+      !form.password
+    ) {
+      setError('账号名称、登录页面地址、用户名和密码不能为空。')
+      return
+    }
+
+    try {
+      const loginUrl = new URL(form.loginUrl)
+      if (
+        loginUrl.origin !== origin ||
+        (loginUrl.protocol !== 'https:' && loginUrl.protocol !== 'http:')
+      ) {
+        setError('登录页面地址必须与当前网站使用相同的协议、域名和端口。')
+        return
+      }
+    } catch {
+      setError('请输入完整有效的登录页面地址。')
       return
     }
 
@@ -162,6 +234,7 @@ export function CredentialManager({
       ...(form.id ? { id: form.id } : {}),
       label: form.label,
       origin,
+      loginUrl: form.loginUrl,
       username: form.username,
       password: form.password,
       ...(form.notes.trim() ? { notes: form.notes } : {}),
@@ -274,7 +347,7 @@ export function CredentialManager({
   if (!origin) {
     return (
       <div className="empty-credentials">
-        <div className="state-icon" aria-hidden="true">🚫</div>
+        <FishMascot badge="🚫" compact variant="change" />
         <strong>当前页面不支持账号保存</strong>
         <p>请打开普通 HTTP 或 HTTPS 登录页面。</p>
       </div>
@@ -307,6 +380,16 @@ export function CredentialManager({
           placeholder="例如：公司管理员"
           autoFocus
         />
+        <label htmlFor="credential-login-url">登录页面地址</label>
+        <input
+          id="credential-login-url"
+          type="url"
+          maxLength={2048}
+          value={form.loginUrl}
+          onChange={(event) => setForm({ ...form, loginUrl: event.target.value })}
+          placeholder="例如：https://example.com/login"
+        />
+        <span className="credential-field-help">必须与当前网站使用相同的协议、域名和端口。</span>
         <label htmlFor="credential-username">用户名</label>
         <input
           id="credential-username"
@@ -340,9 +423,9 @@ export function CredentialManager({
           rows={3}
         />
         <CredentialError message={error} />
-        <button className="primary-button" type="submit" disabled={isSubmitting}>
+        <FishButton variant="save" type="submit" disabled={isSubmitting}>
           {isSubmitting ? '正在加密保存…' : '保存账号'}
-        </button>
+        </FishButton>
       </form>
     )
   }
@@ -350,31 +433,81 @@ export function CredentialManager({
   if (view === 'delete' && deleteTarget) {
     return (
       <div className="credential-delete">
-        <div className="state-icon" aria-hidden="true">🗑️</div>
+        <FishMascot badge="🗑️" compact variant="delete" />
         <strong>删除“{deleteTarget.label}”？</strong>
         <p>用户名：{deleteTarget.username}</p>
         <p className="danger-copy">删除后无法恢复。</p>
         <CredentialError message={error} />
-        <button
-          className="danger-button"
+        <FishButton
+          variant="delete"
+          tone="danger"
           type="button"
           onClick={() => void confirmDeleteCredential()}
           disabled={isSubmitting}
         >
           {isSubmitting ? '正在删除…' : '确认删除'}
-        </button>
-        <button className="secondary-button" type="button" onClick={closeSensitiveView}>
+        </FishButton>
+        <FishButton variant="cancel" tone="secondary" type="button" onClick={closeSensitiveView}>
           取消
-        </button>
+        </FishButton>
       </div>
     )
   }
 
   return (
     <div className="credential-list">
+      <div className="site-alias-card">
+        {isEditingSiteAlias ? (
+          <form className="site-alias-form" onSubmit={(event) => void saveSiteAlias(event)}>
+            <label htmlFor="site-alias">登录页别名</label>
+            <input
+              id="site-alias"
+              type="text"
+              value={siteAliasDraft}
+              onChange={(event) => setSiteAliasDraft(event.target.value)}
+              placeholder="例如：公司内网后台"
+              autoFocus
+            />
+            <div className="site-alias-actions">
+              <button type="submit" disabled={isSubmitting}>保存</button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => {
+                  setSiteAliasDraft(siteAlias)
+                  setIsEditingSiteAlias(false)
+                }}
+              >
+                取消
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div>
+              <span>登录页别名</span>
+              <strong>{siteAlias || '未设置别名'}</strong>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSiteAliasDraft(siteAlias)
+                setIsEditingSiteAlias(true)
+              }}
+            >
+              {siteAlias ? '修改' : '设置'}
+            </button>
+          </>
+        )}
+      </div>
+      {!isLoginPage && (
+        <p className="page-mode-note">
+          当前是网站内部页面；进入包含密码输入框的登录页后，才会显示“一键填入”。
+        </p>
+      )}
       {credentials.length === 0 ? (
         <div className="empty-credentials">
-          <div className="state-icon" aria-hidden="true">🗝️</div>
+          <FishMascot badge="🗝️" compact variant="unlock" />
           <strong>这个网站还没有保存的账号</strong>
           <p>可以保存多个账号，之后再选择需要填入的账号。</p>
         </div>
@@ -386,14 +519,16 @@ export function CredentialManager({
               <span>{credential.username}</span>
             </div>
             <div className="credential-actions">
-              <button
-                type="button"
-                className="fill"
-                onClick={() => void fillCredential(credential.id)}
-                disabled={fillingCredentialId !== null}
-              >
-                {fillingCredentialId === credential.id ? '填入中…' : '填入'}
-              </button>
+              {isLoginPage && (
+                <button
+                  type="button"
+                  className="fill"
+                  onClick={() => void fillCredential(credential.id)}
+                  disabled={fillingCredentialId !== null}
+                >
+                  {fillingCredentialId === credential.id ? '填入中…' : '一键填入'}
+                </button>
+              )}
               <button type="button" onClick={() => void startEditingCredential(credential.id)}>编辑</button>
               <button type="button" className="delete" onClick={() => startDeletingCredential(credential)}>删除</button>
             </div>
@@ -402,9 +537,9 @@ export function CredentialManager({
       )}
       <CredentialError message={error} />
       {fillStatus && <p className="fill-success">{fillStatus}</p>}
-      <button className="primary-button" type="button" onClick={startCreatingCredential}>
+      <FishButton variant="add" type="button" onClick={startCreatingCredential}>
         添加账号
-      </button>
+      </FishButton>
     </div>
   )
 }

@@ -12,7 +12,17 @@ export type CredentialInput = Pick<
   'label' | 'origin' | 'username' | 'password'
 > & {
   id?: string
+  loginUrl?: string
   notes?: string
+}
+
+export type SiteSummary = {
+  origin: string
+  hostname: string
+  alias: string
+  loginUrl: string
+  credentialCount: number
+  updatedAt: string
 }
 
 export type VaultStatus = {
@@ -43,6 +53,9 @@ export type VaultMessage =
     }
   | { type: 'ROTATE_RECOVERY_KEY' }
   | { type: 'LIST_CREDENTIALS'; origin: string }
+  | { type: 'LIST_SITES' }
+  | { type: 'SET_SITE_ALIAS'; origin: string; alias: string }
+  | { type: 'DELETE_SITE_CREDENTIALS'; origin: string }
   | { type: 'GET_CREDENTIAL'; credentialId: string }
   | { type: 'SAVE_CREDENTIAL'; credential: CredentialInput }
   | { type: 'DELETE_CREDENTIAL'; credentialId: string }
@@ -75,6 +88,9 @@ export type VaultResponse =
       recoveryKey?: string
       credentials?: CredentialSummary[]
       credential?: Credential
+      sites?: SiteSummary[]
+      siteAlias?: string
+      deletedCredentialCount?: number
       fillResult?: FillResult
     }
   | {

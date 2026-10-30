@@ -1,11 +1,23 @@
 {
   "manifest_version": 3,
   "name": "VaultFill",
-  "version": "0.5.0",
-  "description": "在本地加密保存，并由用户主动填入网站登录凭据。",
+  "version": "0.6.0",
+  "description": "蓝色大肥鱼主题的本地加密密码库，由用户主动填入网站登录凭据。",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "action": {
     "default_title": "VaultFill",
-    "default_popup": "index.html"
+    "default_popup": "index.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
   },
   "background": {
     "service_worker": "service-worker.js",

@@ -10,6 +10,10 @@ export type FillLoginResult =
       code: 'NO_LOGIN_FIELDS'
     }
 
+export function hasUsableLoginPasswordField(): boolean {
+  return findPasswordField() !== null
+}
+
 export function fillLoginFields(
   username: string,
   password: string,

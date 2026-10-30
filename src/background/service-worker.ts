@@ -33,11 +33,15 @@ import {
   saveStoredVault,
 } from '../storage/vault-repository'
 import {
+  deleteCredentialsForOrigin,
   deleteCredential,
   getCredentialById,
+  getSiteAlias,
   listCredentialsForOrigin,
+  listSavedSites,
   normalizeHttpOrigin,
   saveCredential,
+  setSiteAlias,
 } from '../vault/credential-service'
 
 const storageAccessReady = restrictStorageAccess()
@@ -86,6 +90,15 @@ async function handleMessage(message: VaultMessage): Promise<VaultResponse> {
 
     case 'LIST_CREDENTIALS':
       return listCredentials(message.origin)
+
+    case 'LIST_SITES':
+      return listSites()
+
+    case 'SET_SITE_ALIAS':
+      return updateSiteAlias(message.origin, message.alias)
+
+    case 'DELETE_SITE_CREDENTIALS':
+      return removeSiteCredentials(message.origin)
 
     case 'GET_CREDENTIAL':
       return getCredential(message.credentialId)
@@ -335,9 +348,80 @@ async function listCredentials(origin: string): Promise<VaultResponse> {
       ok: true,
       status: unlockedStatus(),
       credentials: listCredentialsForOrigin(context.payload, origin),
+      siteAlias: getSiteAlias(context.payload, origin),
     }
   } catch {
     return errorResponse('INVALID_REQUEST', '当前页面地址不支持保存账号。')
+  }
+}
+
+async function listSites(): Promise<VaultResponse> {
+  const context = await getUnlockedVaultContext()
+
+  if (!context) {
+    return errorResponse('VAULT_LOCKED', '密码库已锁定，请重新解锁。')
+  }
+
+  return {
+    ok: true,
+    status: unlockedStatus(),
+    sites: listSavedSites(context.payload),
+  }
+}
+
+async function updateSiteAlias(
+  origin: string,
+  alias: string,
+): Promise<VaultResponse> {
+  const context = await getUnlockedVaultContext()
+
+  if (!context) {
+    return errorResponse('VAULT_LOCKED', '密码库已锁定，请重新解锁。')
+  }
+
+  try {
+    const payload = setSiteAlias(context.payload, origin, alias)
+    const encryptedVault = await encryptVaultWithSessionDataKey(
+      payload,
+      context.encryptedVault,
+      context.sessionDataKey,
+    )
+    await saveStoredVault(encryptedVault)
+
+    return {
+      ok: true,
+      status: unlockedStatus(),
+      siteAlias: getSiteAlias(payload, origin),
+    }
+  } catch {
+    return errorResponse('INVALID_REQUEST', '登录页别名格式不正确。')
+  }
+}
+
+async function removeSiteCredentials(origin: string): Promise<VaultResponse> {
+  const context = await getUnlockedVaultContext()
+
+  if (!context) {
+    return errorResponse('VAULT_LOCKED', '密码库已锁定，请重新解锁。')
+  }
+
+  try {
+    const deleted = deleteCredentialsForOrigin(context.payload, origin)
+    const encryptedVault = await encryptVaultWithSessionDataKey(
+      deleted.payload,
+      context.encryptedVault,
+      context.sessionDataKey,
+    )
+    await saveStoredVault(encryptedVault)
+
+    return {
+      ok: true,
+      status: unlockedStatus(),
+      sites: listSavedSites(deleted.payload),
+      deletedCredentialCount: deleted.deletedCredentialCount,
+    }
+  } catch {
+    return errorResponse('INVALID_REQUEST', '找不到要清理的登录页账号。')
   }
 }
 

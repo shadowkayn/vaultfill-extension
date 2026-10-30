@@ -1,5 +1,8 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { FishButton, FishMascot } from './components/FishMascot'
+import { FISH_GUARDIAN_IMAGE, FISH_IMAGES } from './components/fish-assets'
 import { CredentialManager } from './credentials/CredentialManager'
+import { SavedSitesManager } from './sites/SavedSitesManager'
 import {
   RESET_VAULT_CONFIRMATION,
   type VaultMessage,
@@ -13,13 +16,16 @@ import './App.css'
 type CurrentSite = {
   hostname: string
   origin: string
+  url: string
   supported: boolean
+  isLoginPage: boolean
 }
 
-type VaultView = 'default' | 'recover' | 'reset' | 'change-password'
+type VaultView = 'default' | 'recover' | 'reset' | 'change-password' | 'sites'
 
 function App() {
   const [currentSite, setCurrentSite] = useState<CurrentSite | null>(null)
+  const [currentSiteAlias, setCurrentSiteAlias] = useState('')
   const [siteMessage, setSiteMessage] = useState('正在读取当前页面…')
   const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null)
   const [view, setView] = useState<VaultView>('default')
@@ -159,6 +165,9 @@ function App() {
     setDisplayedRecoveryKey(response.recoveryKey ?? null)
     setRecoveryKeySaved(false)
     setView('default')
+    if (!response.status.isUnlocked) {
+      setCurrentSiteAlias('')
+    }
     clearSensitiveFormValues()
   }
 
@@ -182,7 +191,12 @@ function App() {
       isUnlocked: false,
       formatVersion: 2,
     })
+    setCurrentSiteAlias('')
     setView('default')
+  }, [])
+
+  const handleSiteAliasChange = useCallback((alias: string) => {
+    setCurrentSiteAlias(alias)
   }, [])
 
   const screen = getVaultScreen(vaultStatus)
@@ -190,22 +204,41 @@ function App() {
 
   return (
     <main className="popup">
-      <header className="header">
-        <div className="brand-mark" aria-hidden="true">V</div>
-        <div>
-          <h1>VaultFill</h1>
-          <p>本地加密密码库</p>
+      <header className="fish-hero">
+        <span className="hero-bubble hero-bubble--one" aria-hidden="true" />
+        <span className="hero-bubble hero-bubble--two" aria-hidden="true" />
+        <span className="hero-bubble hero-bubble--three" aria-hidden="true" />
+        <div className="hero-copy">
+          <span className="hero-kicker"><span aria-hidden="true">✦</span> 蓝色大肥鱼密码管家</span>
+          <div className="hero-title-row">
+            <h1>VaultFill</h1>
+            <span className="version">v{version}</span>
+          </div>
+          <p>账号交给鱼鱼，在本机安心保管</p>
         </div>
-        <span className="version">v{version}</span>
+        <div className="hero-fish" aria-hidden="true">
+          <span className="hero-fish-halo" />
+          <img src={FISH_GUARDIAN_IMAGE} alt="" />
+        </div>
       </header>
 
       <section className="site-card" aria-live="polite">
-        <span className="label">当前网站</span>
-        <strong>{currentSite?.hostname || '—'}</strong>
-        <span className="origin">{currentSite?.origin || siteMessage}</span>
+        <div className="site-icon" aria-hidden="true"><span>⌁</span></div>
+        <div className="site-details">
+          <span className="label">鱼鱼正在查看</span>
+          <strong>
+            {formatSiteDisplayName(
+              currentSiteAlias,
+              currentSite?.hostname || '—',
+              currentSite?.isLoginPage ?? false,
+            )}
+          </strong>
+          <span className="origin">{currentSite?.origin || siteMessage}</span>
+        </div>
+        <span className="site-chip">当前网站</span>
       </section>
 
-      <section className="vault-panel" aria-live="polite">
+      <section className={`vault-panel vault-panel--${screen}`} aria-live="polite">
         {displayedRecoveryKey ? (
           <RecoveryKeyPanel
             recoveryKey={displayedRecoveryKey}
@@ -271,12 +304,26 @@ function App() {
             {screen === 'unlocked' && view === 'default' && (
               <UnlockedVaultPanel
                 hostname={currentSite?.hostname || '当前页面'}
+                siteAlias={currentSiteAlias}
+                isLoginPage={currentSite?.isLoginPage ?? false}
                 origin={currentSite?.supported ? currentSite.origin : null}
+                currentPageUrl={currentSite?.supported ? currentSite.url : null}
                 error={formError}
                 submitting={isSubmitting}
                 onChangePassword={() => switchView('change-password')}
                 onRotateRecoveryKey={() => void handleRotateRecoveryKey()}
+                onManageSites={() => switchView('sites')}
                 onLock={() => void handleLockVault()}
+                onSiteAliasChange={handleSiteAliasChange}
+                onVaultLocked={handleVaultLocked}
+              />
+            )}
+
+            {screen === 'unlocked' && view === 'sites' && (
+              <SavedSitesManager
+                currentOrigin={currentSite?.supported ? currentSite.origin : null}
+                onBack={() => switchView('default')}
+                onCurrentSiteDeleted={() => setCurrentSiteAlias('')}
                 onVaultLocked={handleVaultLocked}
               />
             )}
@@ -300,8 +347,11 @@ function App() {
       </section>
 
       <footer>
-        <span className="status-dot" aria-hidden="true" />
-        AES-256-GCM · 仅保存在本机
+        <img className="footer-fish" src={FISH_IMAGES.guardian} alt="" aria-hidden="true" />
+        <span>
+          <strong>鱼鱼只在本机守护你的密码</strong>
+          <small>AES-256-GCM 加密 · 不上传云端</small>
+        </span>
       </footer>
     </main>
   )
@@ -320,16 +370,16 @@ type PasswordFormProps = {
 function CreateVaultForm(props: PasswordFormProps) {
   return (
     <form className="vault-form" onSubmit={props.onSubmit}>
-      <div className="state-icon" aria-hidden="true">🔐</div>
+      <FishMascot badge="🔐" variant="create" />
       <h2>创建本地密码库</h2>
       <p className="description">
         主密码不会保存。创建后会生成恢复密钥，忘记主密码时可用它恢复密码库。
       </p>
       <NewPasswordFields {...props} />
       <FormError message={props.error} />
-      <button className="primary-button" type="submit" disabled={props.submitting}>
-        {props.submitting ? '正在创建加密密码库…' : '创建密码库'}
-      </button>
+      <FishButton variant="create" type="submit" disabled={props.submitting}>
+        {props.submitting ? '鱼鱼正在加密…' : '创建并交给鱼鱼守护'}
+      </FishButton>
       <p className="warning">主密码和恢复密钥同时丢失后，数据无法恢复。</p>
     </form>
   )
@@ -386,7 +436,7 @@ function UnlockVaultForm({
 }) {
   return (
     <form className="vault-form" onSubmit={onSubmit}>
-      <div className="state-icon" aria-hidden="true">🔒</div>
+      <FishMascot badge="🔒" variant="unlock" />
       <h2>密码库已锁定</h2>
       <p className="description">
         {legacyVault ? '输入原主密码后，将自动升级并生成恢复密钥。' : '输入主密码以解锁本地凭据。'}
@@ -403,9 +453,9 @@ function UnlockVaultForm({
         autoFocus
       />
       <FormError message={error} />
-      <button className="primary-button" type="submit" disabled={submitting}>
-        {submitting ? '正在解锁…' : '解锁密码库'}
-      </button>
+      <FishButton variant="unlock" type="submit" disabled={submitting}>
+        {submitting ? '鱼鱼正在解锁…' : '让鱼鱼解锁密码库'}
+      </FishButton>
       <div className="text-actions">
         {!legacyVault && <button type="button" onClick={onRecover}>忘记主密码</button>}
         <button type="button" className="danger-link" onClick={onReset}>重置密码库</button>
@@ -443,7 +493,7 @@ function RecoverVaultForm({
   return (
     <form className="vault-form" onSubmit={onSubmit}>
       <BackButton onClick={onBack} />
-      <div className="state-icon" aria-hidden="true">🛟</div>
+      <FishMascot badge="🛟" variant="recover" />
       <h2>恢复密码库</h2>
       <p className="description">恢复成功后，旧恢复密钥会立即失效。</p>
       <label htmlFor="recovery-key">恢复密钥</label>
@@ -460,9 +510,9 @@ function RecoverVaultForm({
       />
       <NewPasswordFields {...passwordProps} />
       <FormError message={error} />
-      <button className="primary-button" type="submit" disabled={submitting}>
+      <FishButton variant="recover" type="submit" disabled={submitting}>
         {submitting ? '正在恢复…' : '恢复并设置新主密码'}
-      </button>
+      </FishButton>
     </form>
   )
 }
@@ -496,7 +546,7 @@ function ChangeMasterPasswordForm({
   return (
     <form className="vault-form" onSubmit={onSubmit}>
       <BackButton onClick={onBack} />
-      <div className="state-icon" aria-hidden="true">🔑</div>
+      <FishMascot badge="🔑" variant="change" />
       <h2>修改主密码</h2>
       <p className="description">修改后当前解锁会话会被关闭。</p>
       <label htmlFor="current-password">当前主密码</label>
@@ -512,9 +562,9 @@ function ChangeMasterPasswordForm({
       />
       <NewPasswordFields {...passwordProps} />
       <FormError message={error} />
-      <button className="primary-button" type="submit" disabled={submitting}>
+      <FishButton variant="change" type="submit" disabled={submitting}>
         {submitting ? '正在修改…' : '修改主密码'}
-      </button>
+      </FishButton>
     </form>
   )
 }
@@ -537,7 +587,7 @@ function ResetVaultForm({
   return (
     <form className="vault-form" onSubmit={onSubmit}>
       <BackButton onClick={onBack} />
-      <div className="state-icon" aria-hidden="true">⚠️</div>
+      <FishMascot badge="⚠️" variant="reset" />
       <h2>永久重置密码库</h2>
       <div className="danger-panel">
         这会删除全部加密数据，无法撤销。请输入“{RESET_VAULT_CONFIRMATION}”继续。
@@ -553,9 +603,9 @@ function ResetVaultForm({
         autoFocus
       />
       <FormError message={error} />
-      <button className="danger-button" type="submit" disabled={submitting}>
+      <FishButton variant="reset" tone="danger" type="submit" disabled={submitting}>
         {submitting ? '正在删除…' : '永久删除并重置'}
-      </button>
+      </FishButton>
     </form>
   )
 }
@@ -573,7 +623,7 @@ function RecoveryKeyPanel({
 }) {
   return (
     <div className="recovery-key-panel">
-      <div className="state-icon" aria-hidden="true">🧾</div>
+      <FishMascot badge="🧾" variant="continue" />
       <h2>请保存密码库恢复密钥</h2>
       <p className="description">
         如果以后忘记主密码，可以使用这串恢复密钥重新解锁密码库，并设置新的主密码。
@@ -596,50 +646,69 @@ function RecoveryKeyPanel({
         />
         我已将恢复密钥保存在安全的位置
       </label>
-      <button className="primary-button" type="button" disabled={!confirmed} onClick={onContinue}>
+      <FishButton variant="continue" type="button" disabled={!confirmed} onClick={onContinue}>
         继续使用 VaultFill
-      </button>
+      </FishButton>
     </div>
   )
 }
 
 function UnlockedVaultPanel({
   hostname,
+  siteAlias,
+  isLoginPage,
   origin,
+  currentPageUrl,
   error,
   submitting,
   onChangePassword,
   onRotateRecoveryKey,
+  onManageSites,
   onLock,
+  onSiteAliasChange,
   onVaultLocked,
 }: {
   hostname: string
+  siteAlias: string
+  isLoginPage: boolean
   origin: string | null
+  currentPageUrl: string | null
   error: string
   submitting: boolean
   onChangePassword: () => void
   onRotateRecoveryKey: () => void
+  onManageSites: () => void
   onLock: () => void
+  onSiteAliasChange: (alias: string) => void
   onVaultLocked: () => void
 }) {
   return (
     <div className="unlocked-state">
       <div className="unlocked-heading">
         <div>
-          <span className="eyebrow">密码库已解锁</span>
-          <h2>{hostname}</h2>
+          <span className="eyebrow"><span aria-hidden="true">●</span> 密码库已解锁</span>
+          <h2>{formatSiteDisplayName(siteAlias, hostname, isLoginPage)}</h2>
         </div>
-        <span className="unlocked-badge">安全会话</span>
+        <span className="unlocked-badge">鱼鱼守护中</span>
       </div>
-      <CredentialManager origin={origin} onVaultLocked={onVaultLocked} />
+      <CredentialManager
+        origin={origin}
+        currentPageUrl={currentPageUrl}
+        isLoginPage={isLoginPage}
+        onSiteAliasChange={onSiteAliasChange}
+        onVaultLocked={onVaultLocked}
+      />
       <FormError message={error} />
+      <FishButton variant="sites" tone="secondary" type="button" onClick={onManageSites}>
+        查看已保存登录页
+      </FishButton>
       <div className="management-actions">
         <button type="button" onClick={onChangePassword} disabled={submitting}>修改主密码</button>
         <button type="button" onClick={onRotateRecoveryKey} disabled={submitting}>更新恢复密钥</button>
       </div>
-      <button className="secondary-button" type="button" onClick={onLock} disabled={submitting}>
+      <FishButton variant="lock" tone="secondary" type="button" onClick={onLock} disabled={submitting}>
         锁定密码库
-      </button>
+      </FishButton>
     </div>
   )
 }
@@ -734,13 +803,62 @@ function loadCurrentSite(
       setCurrentSite({
         hostname: url.hostname,
         origin: url.origin,
+        url: url.href,
         supported,
+        isLoginPage: false,
       })
       setSiteMessage(supported ? '当前页面可以使用 VaultFill' : '此类浏览器页面不支持填充')
+
+      if (supported && tab.id) {
+        void detectLoginPage(tab.id, url.origin).then((isLoginPage) => {
+          setCurrentSite({
+            hostname: url.hostname,
+            origin: url.origin,
+            url: url.href,
+            supported: true,
+            isLoginPage,
+          })
+        })
+      }
     } catch {
       setSiteMessage('当前页面地址无法识别')
     }
   })
+}
+
+async function detectLoginPage(
+  tabId: number,
+  expectedOrigin: string,
+): Promise<boolean> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['detect-login-page.js'],
+    })
+
+    const result = (await chrome.tabs.sendMessage(tabId, {
+      type: 'DETECT_LOGIN_PAGE',
+      expectedOrigin,
+    })) as
+      | { ok: true; isLoginPage: boolean }
+      | { ok: false; code: 'ORIGIN_MISMATCH' }
+
+    return result?.ok === true && result.isLoginPage
+  } catch {
+    return false
+  }
+}
+
+function formatSiteDisplayName(
+  alias: string,
+  hostname: string,
+  isLoginPage: boolean,
+): string {
+  if (!alias) {
+    return hostname
+  }
+
+  return `${alias}${isLoginPage ? '登录' : '页面'}`
 }
 
 export default App

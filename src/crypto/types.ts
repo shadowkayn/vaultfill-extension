@@ -6,6 +6,7 @@ export type Credential = {
   id: string
   label: string
   origin: string
+  loginUrl?: string
   username: string
   password: string
   notes?: string
@@ -16,6 +17,7 @@ export type Credential = {
 export type VaultPayload = {
   version: 1
   credentials: Credential[]
+  siteAliases?: Record<string, string>
 }
 
 export type KdfParameters = {
@@ -62,6 +64,7 @@ export function createEmptyVaultPayload(): VaultPayload {
   return {
     version: 1,
     credentials: [],
+    siteAliases: {},
   }
 }
 

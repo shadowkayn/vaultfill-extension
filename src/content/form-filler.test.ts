@@ -1,13 +1,34 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fillLoginFields } from './form-filler'
+import {
+  fillLoginFields,
+  hasUsableLoginPasswordField,
+} from './form-filler'
 
 beforeEach(() => {
   document.body.innerHTML = ''
 })
 
 describe('login form filler', () => {
+  it('detects a login page from a usable password field', () => {
+    document.body.innerHTML = `
+      <input type="text" autocomplete="username" />
+      <input type="password" autocomplete="current-password" />
+    `
+
+    expect(hasUsableLoginPasswordField()).toBe(true)
+  })
+
+  it('does not treat an internal page without a password field as a login page', () => {
+    document.body.innerHTML = `
+      <nav>首页</nav>
+      <input type="search" placeholder="搜索" />
+    `
+
+    expect(hasUsableLoginPasswordField()).toBe(false)
+  })
+
   it('fills a standard login form and dispatches framework-compatible events', () => {
     document.body.innerHTML = `
       <form>

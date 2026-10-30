@@ -12,10 +12,15 @@ export default defineConfig({
         popup: `${rootDir}index.html`,
         'service-worker': `${rootDir}src/background/service-worker.ts`,
         'fill-form': `${rootDir}src/content/fill-form.ts`,
+        'detect-login-page': `${rootDir}src/content/detect-login-page.ts`,
       },
       output: {
         entryFileNames: ({ name }) => {
-          if (name === 'service-worker' || name === 'fill-form') {
+          if (
+            name === 'service-worker' ||
+            name === 'fill-form' ||
+            name === 'detect-login-page'
+          ) {
             return `${name}.js`
           }
 
